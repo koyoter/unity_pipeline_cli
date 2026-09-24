@@ -1,0 +1,24 @@
+[package]
+name = "unity_pipeline_cli"
+version = "0.1.2"
+edition = "2021"
+
+[[bin]]
+name = "unity_pipeline_cli"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+regex = "1"
+anyhow = "1"
+patchkit = "0.3"
+sha1 = "0.10"
+semver = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

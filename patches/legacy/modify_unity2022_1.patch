@@ -1,0 +1,710 @@
+diff --git a/Editor/Commands/Assets/AssetCommands.cs b/Editor/Commands/Assets/AssetCommands.cs
+index 1b59ae9..23c938d 100644
+--- a/Editor/Commands/Assets/AssetCommands.cs
++++ b/Editor/Commands/Assets/AssetCommands.cs
+@@ -53,7 +53,12 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+             // extension is still ".physicMaterial". AssetDatabase.CreateAsset rejects a
+             // ".physicsMaterial" file ("should not be used to create a file of type 'physicsMaterial'"),
+             // so accept either spelling from the agent and normalize to the extension Unity writes.
++#if UNITY_2022_3
++            if (typeof(PhysicMaterial).IsAssignableFrom(resolvedType) &&
++#else
+             if (typeof(PhysicsMaterial).IsAssignableFrom(resolvedType) &&
++#endif
++            
+                 normalized.EndsWith(".physicsMaterial", StringComparison.OrdinalIgnoreCase))
+             {
+                 normalized = normalized.Substring(0, normalized.Length - ".physicsMaterial".Length) + ".physicMaterial";
+@@ -87,6 +92,19 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+                 // every other type.
+                 asset = new Material(materialShader);
+             }
++#if UNITY_2022_3
++            else if (typeof(PhysicMaterial).IsAssignableFrom(resolvedType))
++            {
++                // CLI-222: PhysicsMaterial has a public parameterless ctor, but create it explicitly so
++                // we can stamp the documented sensible defaults rather than relying on engine defaults.
++                asset = new PhysicMaterial
++                {
++                    dynamicFriction = 0.6f,
++                    staticFriction = 0.6f,
++                    bounciness = 0f,
++                };
++            }
++#else
+             else if (typeof(PhysicsMaterial).IsAssignableFrom(resolvedType))
+             {
+                 // CLI-222: PhysicsMaterial has a public parameterless ctor, but create it explicitly so
+@@ -98,6 +116,7 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+                     bounciness = 0f,
+                 };
+             }
++#endif
+             else
+             {
+                 // Other UnityEngine.Object subclasses with a public parameterless ctor.
+@@ -542,7 +561,11 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+             if (typeName == "PhysicsMaterial" || typeName == "PhysicMaterial"
+                 || typeName == "UnityEngine.PhysicsMaterial" || typeName == "UnityEngine.PhysicMaterial")
+             {
++#if UNITY_2022_3
++                return typeof(PhysicMaterial);
++#else
+                 return typeof(PhysicsMaterial);
++#endif
+             }
+ 
+             var direct = Type.GetType(typeName, throwOnError: false);
+diff --git a/Editor/Commands/Materials/MaterialCommands.cs b/Editor/Commands/Materials/MaterialCommands.cs
+index 45acc94..1bdae04 100644
+--- a/Editor/Commands/Materials/MaterialCommands.cs
++++ b/Editor/Commands/Materials/MaterialCommands.cs
+@@ -45,7 +45,11 @@ namespace Unity.Pipeline.Editor.Commands.Materials
+                 // rawRenderQueue is -1 when the material inherits from the shader and a positive
+                 // integer when explicitly overridden — returning the raw value preserves the
+                 // round-trip contract with set_material_properties renderQueue:-1 (inherit).
++#if UNITY_2022_3
++                RenderQueue = mat.renderQueue,
++#else
+                 RenderQueue = mat.rawRenderQueue,
++#endif
+                 EnabledKeywords = GetEnabledKeywords(mat),
+             };
+ 
+diff --git a/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.CSharp.dll.meta b/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.CSharp.dll.meta
+index 1fddefb..a35298b 100644
+--- a/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.CSharp.dll.meta
++++ b/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.CSharp.dll.meta
+@@ -2,7 +2,7 @@ fileFormatVersion: 2
+ guid: b5a1f47d969a4054bbbf0bc7cc231ee5
+ PluginImporter:
+   externalObjects: {}
+-  serializedVersion: 3
++  serializedVersion: 2
+   iconMap: {}
+   executionOrder: {}
+   defineConstraints: []
+@@ -11,40 +11,77 @@ PluginImporter:
+   isExplicitlyReferenced: 0
+   validateReferences: 1
+   platformData:
+-    Any:
+-      enabled: 1
++  - first:
++      : Any
++    second:
++      enabled: 0
+       settings:
++        Exclude Android: 1
+         Exclude Editor: 0
+-        Exclude Linux64: 0
+-        Exclude OSXUniversal: 0
+-        Exclude Win: 0
+-        Exclude Win64: 0
+-    Editor:
++        Exclude Linux64: 1
++        Exclude OSXUniversal: 1
++        Exclude Win: 1
++        Exclude Win64: 1
++        Exclude iOS: 1
++  - first:
++      Android: Android
++    second:
++      enabled: 0
++      settings:
++        AndroidSharedLibraryType: Executable
++        CPU: ARMv7
++  - first:
++      Any: 
++    second:
++      enabled: 0
++      settings: {}
++  - first:
++      Editor: Editor
++    second:
+       enabled: 1
+       settings:
+         CPU: AnyCPU
+         DefaultValueInitialized: true
+         OS: AnyOS
+-    Linux64:
+-      enabled: 1
++  - first:
++      Standalone: Linux64
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    OSXUniversal:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: OSXUniversal
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win64:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win64
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Windows Store Apps: WindowsStoreApps
++    second:
++      enabled: 0
+       settings:
+         CPU: AnyCPU
+-    WindowsStoreApps:
++  - first:
++      iPhone: iOS
++    second:
+       enabled: 0
+       settings:
++        AddToEmbeddedBinaries: false
+         CPU: AnyCPU
++        CompileFlags: 
++        FrameworkDependencies: 
+   userData: 
+   assetBundleName: 
+   assetBundleVariant: 
+diff --git a/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.dll.meta b/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.dll.meta
+index 38feacc..66aebd0 100644
+--- a/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.dll.meta
++++ b/Runtime/Plugins/CodeAnalysis/Microsoft.CodeAnalysis.dll.meta
+@@ -2,7 +2,7 @@ fileFormatVersion: 2
+ guid: ff3508870465d8e4b83e5a2c71492756
+ PluginImporter:
+   externalObjects: {}
+-  serializedVersion: 3
++  serializedVersion: 2
+   iconMap: {}
+   executionOrder: {}
+   defineConstraints: []
+@@ -11,40 +11,77 @@ PluginImporter:
+   isExplicitlyReferenced: 0
+   validateReferences: 1
+   platformData:
+-    Any:
+-      enabled: 1
++  - first:
++      : Any
++    second:
++      enabled: 0
+       settings:
++        Exclude Android: 1
+         Exclude Editor: 0
+-        Exclude Linux64: 0
+-        Exclude OSXUniversal: 0
+-        Exclude Win: 0
+-        Exclude Win64: 0
+-    Editor:
++        Exclude Linux64: 1
++        Exclude OSXUniversal: 1
++        Exclude Win: 1
++        Exclude Win64: 1
++        Exclude iOS: 1
++  - first:
++      Android: Android
++    second:
++      enabled: 0
++      settings:
++        AndroidSharedLibraryType: Executable
++        CPU: ARMv7
++  - first:
++      Any: 
++    second:
++      enabled: 0
++      settings: {}
++  - first:
++      Editor: Editor
++    second:
+       enabled: 1
+       settings:
+         CPU: AnyCPU
+         DefaultValueInitialized: true
+         OS: AnyOS
+-    Linux64:
+-      enabled: 1
++  - first:
++      Standalone: Linux64
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    OSXUniversal:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: OSXUniversal
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win64:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win64
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Windows Store Apps: WindowsStoreApps
++    second:
++      enabled: 0
+       settings:
+         CPU: AnyCPU
+-    WindowsStoreApps:
++  - first:
++      iPhone: iOS
++    second:
+       enabled: 0
+       settings:
++        AddToEmbeddedBinaries: false
+         CPU: AnyCPU
++        CompileFlags: 
++        FrameworkDependencies: 
+   userData: 
+   assetBundleName: 
+   assetBundleVariant: 
+diff --git a/Runtime/Plugins/CodeAnalysis/System.Collections.Immutable.dll.meta b/Runtime/Plugins/CodeAnalysis/System.Collections.Immutable.dll.meta
+index 3019523..cd3dd78 100644
+--- a/Runtime/Plugins/CodeAnalysis/System.Collections.Immutable.dll.meta
++++ b/Runtime/Plugins/CodeAnalysis/System.Collections.Immutable.dll.meta
+@@ -2,7 +2,7 @@ fileFormatVersion: 2
+ guid: bedf8ea7477e57d46afe86233f846897
+ PluginImporter:
+   externalObjects: {}
+-  serializedVersion: 3
++  serializedVersion: 2
+   iconMap: {}
+   executionOrder: {}
+   defineConstraints: []
+@@ -11,40 +11,77 @@ PluginImporter:
+   isExplicitlyReferenced: 0
+   validateReferences: 1
+   platformData:
+-    Any:
+-      enabled: 1
++  - first:
++      : Any
++    second:
++      enabled: 0
+       settings:
++        Exclude Android: 1
+         Exclude Editor: 0
+-        Exclude Linux64: 0
+-        Exclude OSXUniversal: 0
+-        Exclude Win: 0
+-        Exclude Win64: 0
+-    Editor:
++        Exclude Linux64: 1
++        Exclude OSXUniversal: 1
++        Exclude Win: 1
++        Exclude Win64: 1
++        Exclude iOS: 1
++  - first:
++      Android: Android
++    second:
++      enabled: 0
++      settings:
++        AndroidSharedLibraryType: Executable
++        CPU: ARMv7
++  - first:
++      Any: 
++    second:
++      enabled: 0
++      settings: {}
++  - first:
++      Editor: Editor
++    second:
+       enabled: 1
+       settings:
+         CPU: AnyCPU
+         DefaultValueInitialized: true
+         OS: AnyOS
+-    Linux64:
+-      enabled: 1
++  - first:
++      Standalone: Linux64
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    OSXUniversal:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: OSXUniversal
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win64:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win64
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Windows Store Apps: WindowsStoreApps
++    second:
++      enabled: 0
+       settings:
+         CPU: AnyCPU
+-    WindowsStoreApps:
++  - first:
++      iPhone: iOS
++    second:
+       enabled: 0
+       settings:
++        AddToEmbeddedBinaries: false
+         CPU: AnyCPU
++        CompileFlags: 
++        FrameworkDependencies: 
+   userData: 
+   assetBundleName: 
+   assetBundleVariant: 
+diff --git a/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta b/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta
+index 1bb2081..cf70ac3 100644
+--- a/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta
++++ b/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta
+@@ -11,40 +11,77 @@ PluginImporter:
+   isExplicitlyReferenced: 0
+   validateReferences: 1
+   platformData:
+-    Any:
+-      enabled: 1
++  - first:
++      : Any
++    second:
++      enabled: 0
+       settings:
++        Exclude Android: 1
+         Exclude Editor: 0
+-        Exclude Linux64: 0
+-        Exclude OSXUniversal: 0
+-        Exclude Win: 0
+-        Exclude Win64: 0
+-    Editor:
++        Exclude Linux64: 1
++        Exclude OSXUniversal: 1
++        Exclude Win: 1
++        Exclude Win64: 1
++        Exclude iOS: 1
++  - first:
++      Android: Android
++    second:
++      enabled: 0
++      settings:
++        AndroidSharedLibraryType: Executable
++        CPU: ARMv7
++  - first:
++      Any: 
++    second:
++      enabled: 0
++      settings: {}
++  - first:
++      Editor: Editor
++    second:
+       enabled: 1
+       settings:
+         CPU: AnyCPU
+         DefaultValueInitialized: true
+         OS: AnyOS
+-    Linux64:
+-      enabled: 1
++  - first:
++      Standalone: Linux64
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    OSXUniversal:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: OSXUniversal
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win
++    second:
++      enabled: 0
+       settings:
+-        CPU: AnyCPU
+-    Win64:
+-      enabled: 1
++        CPU: None
++  - first:
++      Standalone: Win64
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Windows Store Apps: WindowsStoreApps
++    second:
++      enabled: 0
+       settings:
+         CPU: AnyCPU
+-    WindowsStoreApps:
++  - first:
++      iPhone: iOS
++    second:
+       enabled: 0
+       settings:
++        AddToEmbeddedBinaries: false
+         CPU: AnyCPU
++        CompileFlags: 
++        FrameworkDependencies: 
+   userData: 
+   assetBundleName: 
+   assetBundleVariant: 
+diff --git a/Runtime/Plugins/CodeAnalysis/System.Runtime.CompilerServices.Unsafe.dll.meta b/Runtime/Plugins/CodeAnalysis/System.Runtime.CompilerServices.Unsafe.dll.meta
+index 55f78b6..1052985 100644
+--- a/Runtime/Plugins/CodeAnalysis/System.Runtime.CompilerServices.Unsafe.dll.meta
++++ b/Runtime/Plugins/CodeAnalysis/System.Runtime.CompilerServices.Unsafe.dll.meta
+@@ -1,2 +1,87 @@
+ fileFormatVersion: 2
+-guid: 99bd0ed185b59ef4fabfd6fe42ac2d19
+\ No newline at end of file
++guid: 99bd0ed185b59ef4fabfd6fe42ac2d19
++PluginImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  iconMap: {}
++  executionOrder: {}
++  defineConstraints: []
++  isPreloaded: 0
++  isOverridable: 1
++  isExplicitlyReferenced: 0
++  validateReferences: 1
++  platformData:
++  - first:
++      : Any
++    second:
++      enabled: 0
++      settings:
++        Exclude Android: 1
++        Exclude Editor: 0
++        Exclude Linux64: 1
++        Exclude OSXUniversal: 1
++        Exclude Win: 1
++        Exclude Win64: 1
++        Exclude iOS: 1
++  - first:
++      Android: Android
++    second:
++      enabled: 0
++      settings:
++        AndroidSharedLibraryType: Executable
++        CPU: ARMv7
++  - first:
++      Any: 
++    second:
++      enabled: 0
++      settings: {}
++  - first:
++      Editor: Editor
++    second:
++      enabled: 1
++      settings:
++        CPU: AnyCPU
++        DefaultValueInitialized: true
++        OS: AnyOS
++  - first:
++      Standalone: Linux64
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Standalone: OSXUniversal
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Standalone: Win
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Standalone: Win64
++    second:
++      enabled: 0
++      settings:
++        CPU: None
++  - first:
++      Windows Store Apps: WindowsStoreApps
++    second:
++      enabled: 0
++      settings:
++        CPU: AnyCPU
++  - first:
++      iPhone: iOS
++    second:
++      enabled: 0
++      settings:
++        AddToEmbeddedBinaries: false
++        CPU: AnyCPU
++        CompileFlags: 
++        FrameworkDependencies: 
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: 
+diff --git a/Tests/Editor/Assets/PhysicsMaterialAssetCommandsTests.cs b/Tests/Editor/Assets/PhysicsMaterialAssetCommandsTests.cs
+index c3a7ce3..cb6bce6 100644
+--- a/Tests/Editor/Assets/PhysicsMaterialAssetCommandsTests.cs
++++ b/Tests/Editor/Assets/PhysicsMaterialAssetCommandsTests.cs
+@@ -39,7 +39,11 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+             }
+         }
+ 
++#if UNITY_2022_3
++        private static void AssertDefaults(PhysicMaterial pm)
++#else
+         private static void AssertDefaults(PhysicsMaterial pm)
++#endif
+         {
+             Assert.IsNotNull(pm, "Created physics material should load as a PhysicsMaterial");
+             Assert.AreEqual(0f, pm.bounciness, 1e-4f, "bounciness default should be 0");
+@@ -55,7 +59,11 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+             var result = AssetCommands.CreateAsset(Root + "/Phys/Ball.physicMaterial", "PhysicsMaterial");
+ 
+             StringAssert.EndsWith(".physicMaterial", result.AssetPath);
++#if UNITY_2022_3
++            AssertDefaults(AssetDatabase.LoadAssetAtPath<PhysicMaterial>(result.AssetPath));
++#else
+             AssertDefaults(AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(result.AssetPath));
++#endif
+         }
+ 
+         [Test]
+@@ -66,7 +74,11 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+             var result = AssetCommands.CreateAsset(Root + "/Phys/Modern.physicsMaterial", "PhysicsMaterial");
+ 
+             StringAssert.EndsWith(".physicMaterial", result.AssetPath);
++#if UNITY_2022_3
++            AssertDefaults(AssetDatabase.LoadAssetAtPath<PhysicMaterial>(result.AssetPath));
++#else
+             AssertDefaults(AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(result.AssetPath));
++#endif
+         }
+ 
+         [Test]
+@@ -76,8 +88,15 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+             var result = AssetCommands.CreateAsset(Root + "/Phys/Legacy.physicMaterial", "PhysicMaterial");
+ 
+             var loaded = AssetDatabase.LoadMainAssetAtPath(result.AssetPath);
++            
++            
++#if UNITY_2022_3
++            Assert.IsInstanceOf<PhysicMaterial>(loaded, "Legacy 'PhysicMaterial' type name should resolve to PhysicsMaterial");
++            AssertDefaults(loaded as PhysicMaterial);
++#else
+             Assert.IsInstanceOf<PhysicsMaterial>(loaded, "Legacy 'PhysicMaterial' type name should resolve to PhysicsMaterial");
+             AssertDefaults(loaded as PhysicsMaterial);
++#endif
+         }
+ 
+         [Test]
+@@ -97,7 +116,11 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+         public void CreateAsset_PhysicsMaterial_AssignableToColliderSlot()
+         {
+             var result = AssetCommands.CreateAsset(Root + "/Phys/Assignable.physicMaterial", "PhysicsMaterial");
++#if UNITY_2022_3
++            var pm = AssetDatabase.LoadAssetAtPath<PhysicMaterial>(result.AssetPath);
++#else
+             var pm = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(result.AssetPath);
++#endif
+ 
+             var go = new GameObject("__CLI222_Collider");
+             try
+@@ -130,7 +153,12 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+                 Assert.IsTrue(response.JsonResponse.ContainsKey("result"), "Should have result field");
+ 
+                 var created = (string)response.JsonResponse["result"]["assetPath"];
++                
++#if UNITY_2022_3
++                AssertDefaults(AssetDatabase.LoadAssetAtPath<PhysicMaterial>(created));
++#else
+                 AssertDefaults(AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(created));
++#endif
+             }
+         }
+ 
+@@ -145,8 +173,14 @@ namespace Unity.Pipeline.Tests.Editor.Assets
+                 Assert.IsTrue(response.IsSuccess, $"create_asset (legacy PhysicMaterial) should succeed: {response.Error}");
+ 
+                 var created = (string)response.JsonResponse["result"]["assetPath"];
++                
++#if UNITY_2022_3
++                Assert.IsInstanceOf<PhysicMaterial>(AssetDatabase.LoadMainAssetAtPath(created),
++                    "Legacy 'PhysicMaterial' should resolve to PhysicsMaterial over the wire");
++#else
+                 Assert.IsInstanceOf<PhysicsMaterial>(AssetDatabase.LoadMainAssetAtPath(created),
+                     "Legacy 'PhysicMaterial' should resolve to PhysicsMaterial over the wire");
++#endif
+             }
+         }
+ 
+diff --git a/Tests/Editor/Materials/MaterialCommandsTests.cs b/Tests/Editor/Materials/MaterialCommandsTests.cs
+index 79c92ee..662f000 100644
+--- a/Tests/Editor/Materials/MaterialCommandsTests.cs
++++ b/Tests/Editor/Materials/MaterialCommandsTests.cs
+@@ -289,7 +289,11 @@ namespace Unity.Pipeline.Tests.Editor.Materials
+             // default can legitimately equal the prior override (e.g. 3000), so comparing the effective
+             // value would be flaky. rawRenderQueue is -1 exactly when the material inherits the shader's.
+             var mat = AssetDatabase.LoadAssetAtPath<Material>(handle.Path);
++#if UNITY_2022_3
++            Assert.AreEqual(-1, mat.renderQueue, "renderQueue -1 should clear the override and inherit from the shader");
++#else
+             Assert.AreEqual(-1, mat.rawRenderQueue, "renderQueue -1 should clear the override and inherit from the shader");
++#endif
+         }
+ 
+         // ---- unknown / mismatch -------------------------------------------------------------------

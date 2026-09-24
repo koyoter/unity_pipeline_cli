@@ -1,0 +1,105 @@
+diff --git a/Editor/PipelineAnalytics.cs b/Editor/PipelineAnalytics.cs
+index 5b38385..953f880 100644
+--- a/Editor/PipelineAnalytics.cs
++++ b/Editor/PipelineAnalytics.cs
+@@ -71,10 +71,12 @@ namespace Unity.Pipeline.Editor
+         /// </summary>
+         private const string RedactedCommandName = "<customUserCommand>";
+ 
++        #if ENABLE_ANALYTICS
+         /// <summary>
+         /// The send call, indirected so tests can capture events instead of shipping them.
+         /// </summary>
+         internal static Action<IAnalytic> s_Send = analytic => EditorAnalytics.SendAnalytic(analytic);
++        #endif
+ 
+         /// <summary>
+         /// The session latch as stored in SessionState: whether the start event has been sent this
+@@ -112,6 +114,7 @@ namespace Unity.Pipeline.Editor
+ 
+                 var command = info.Command;
+                 var userDefined = IsUserDefinedCommand(command.Package);
++#if ENABLE_ANALYTICS
+                 s_Send(new CommandExecutedAnalytic(new CommandExecutedData
+                 {
+                     // Only a command that shipped with the package describes itself; a
+@@ -124,6 +127,7 @@ namespace Unity.Pipeline.Editor
+                     isEval = IsEvalCommand(command.Tags),
+                     isEvalWithExistingCommandAvailable = EvalCoversAnExistingCommand(command, info.Parameters),
+                 }));
++#endif
+             }
+             catch (Exception ex)
+             {
+@@ -140,6 +144,7 @@ namespace Unity.Pipeline.Editor
+         {
+             try
+             {
++#if ENABLE_ANALYTICS
+                 var (started, startTicks) = SessionLatch;
+                 if (!started)
+                     return;
+@@ -149,11 +154,11 @@ namespace Unity.Pipeline.Editor
+                 var elapsedMs = startTicks > 0
+                     ? Math.Max(0, (DateTime.UtcNow.Ticks - startTicks) / TimeSpan.TicksPerMillisecond)
+                     : 0;
+-
+                 s_Send(new SessionStoppedAnalytic(new SessionStoppedData
+                 {
+                     sessionDuration = elapsedMs,
+                 }));
++#endif
+             }
+             catch (Exception ex)
+             {
+@@ -172,7 +177,7 @@ namespace Unity.Pipeline.Editor
+                 return;
+ 
+             SessionLatch = (true, DateTime.UtcNow.Ticks);
+-
++#if ENABLE_ANALYTICS
+             var server = PipelineServerStartup.Server;
+             s_Send(new SessionStartedAnalytic(new SessionStartedData
+             {
+@@ -184,6 +189,7 @@ namespace Unity.Pipeline.Editor
+                 dynamicPortAssignation = server?.PortAutoAssigned ?? true,
+                 hotReloadWatcherEnabled = EditorCodeReloadWatcher.IsWatching,
+             }));
++#endif
+         }
+ 
+         /// <summary>
+@@ -284,7 +290,7 @@ namespace Unity.Pipeline.Editor
+                 array[i] = tags[i];
+             return array;
+         }
+-
++#if ENABLE_ANALYTICS
+         // The payload field names below ARE the registered event schema. Renaming one silently stops
+         // that column being populated, so they keep the schema casing rather than C# casing.
+ 
+@@ -363,5 +369,6 @@ namespace Unity.Pipeline.Editor
+                 return true;
+             }
+         }
++#endif
+     }
+ }
+diff --git a/Tests/Editor/PipelineAnalyticsTests.cs b/Tests/Editor/PipelineAnalyticsTests.cs
+index f2ec939..6b40b5d 100644
+--- a/Tests/Editor/PipelineAnalyticsTests.cs
++++ b/Tests/Editor/PipelineAnalyticsTests.cs
+@@ -15,6 +15,7 @@ using UnityEngine.TestTools;
+ 
+ namespace Unity.Pipeline.Tests.Editor
+ {
++#if ENABLE_ANALYTICS
+     /// <summary>
+     /// Tests for the analytics reporter and for the post-command info it is driven by.
+     ///
+@@ -456,4 +457,5 @@ namespace Unity.Pipeline.Tests.Editor
+ 
+         #endregion
+     }
++#endif
+ }
