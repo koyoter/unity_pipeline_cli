@@ -68,7 +68,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          sed -i.bak 's/^version = .*/version = "${VERSION}"/' Cargo.toml
+          sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" Cargo.toml
           rm -f Cargo.toml.bak
 
       - name: Build
