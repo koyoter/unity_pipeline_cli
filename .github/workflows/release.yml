@@ -78,24 +78,24 @@ jobs:
             cargo build --release --target "$t"
           done
 
-      # 资产统一为 zip：GitHub 下载文件名 = 资产名（不带版本号），解压即得原生文件名的二进制
+      # 资产名 unity_pipeline_cli-{版本}-{平台}.zip，平台段与 --version 输出的平台标签一致
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
           for t in ${{ matrix.targets }}; do
             if [[ "$t" == *windows* ]]; then
-              powershell -NoProfile -Command "Compress-Archive -Path 'target/$t/release/${BIN}.exe' -DestinationPath 'dist/${BIN}-windows.zip' -Force"
+              powershell -NoProfile -Command "Compress-Archive -Path 'target/$t/release/${BIN}.exe' -DestinationPath 'dist/${BIN}-${VERSION}-windows-x86_64.zip' -Force"
             else
               if [[ "$t" == aarch64* ]]; then arch=arm64; else arch=x86_64; fi
-              zip -j "dist/${BIN}-macos-${arch}.zip" "target/$t/release/${BIN}"
+              zip -j "dist/${BIN}-${VERSION}-macos-${arch}.zip" "target/$t/release/${BIN}"
             fi
           done
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             lipo -create -output "${BIN}" \
               "target/x86_64-apple-darwin/release/${BIN}" \
               "target/aarch64-apple-darwin/release/${BIN}"
-            zip -j "dist/${BIN}-macos-universal.zip" "${BIN}"
+            zip -j "dist/${BIN}-${VERSION}-macos-universal.zip" "${BIN}"
           fi
           ls -l dist
 

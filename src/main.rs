@@ -13,11 +13,21 @@ mod pipeline;
 mod process;
 mod projects;
 
+/// --version 输出的完整版本串：`{semver} {平台标签}`。
+/// 平台标签与 Release 资产名的平台段一致（unity_pipeline_cli-{版本}-{平台}.zip），
+/// 按平台下载时取 --version 最后一个空格后的 token 即可拼出资产文件名。
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+const VERSION_STR: &str = concat!(env!("CARGO_PKG_VERSION"), " windows-x86_64");
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+const VERSION_STR: &str = concat!(env!("CARGO_PKG_VERSION"), " macos-x86_64");
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+const VERSION_STR: &str = concat!(env!("CARGO_PKG_VERSION"), " macos-arm64");
+
 #[derive(Parser)]
 #[command(
     name = "unity",
     about = "Unity offline CLI (Rust port)",
-    version,
+    version = VERSION_STR,
     disable_help_subcommand = true
 )]
 struct Cli {
