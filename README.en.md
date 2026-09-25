@@ -22,8 +22,18 @@ This project is a streamlined, optimized take on the **Pipeline-package interact
 
 ### Getting the binary
 
-- Windows: use the prebuilt `releases/unity_pipeline_cli.exe` from the repository
-- macOS / building yourself: `cargo build --release`, or the root scripts (`build-release.bat` / `./build-release.sh universal`)
+Download the zip for your platform from [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) and unzip it — a single self-contained binary, no installation; the macOS zips keep the executable bit, so no `chmod +x` needed.
+
+| Platform | Download (v0.1.2) |
+| :-- | :-- |
+| Windows x64 | [unity_pipeline_cli-0.1.2-windows-x86_64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-windows-x86_64.zip) |
+| macOS Apple Silicon | [unity_pipeline_cli-0.1.2-macos-arm64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-arm64.zip) |
+| macOS Intel | [unity_pipeline_cli-0.1.2-macos-x86_64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-x86_64.zip) |
+| macOS universal | [unity_pipeline_cli-0.1.2-macos-universal.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-universal.zip) |
+
+> Not sure which Mac arch? Pick universal. After a new release, grab the fresh links from the [Releases page](https://github.com/koyoter/unity_pipeline_cli/releases/latest) and update this table.
+
+Building yourself: `cargo build --release`, or the root scripts (`build-release.bat` / `./build-release.sh universal`).
 
 ### One command to wire it up
 
