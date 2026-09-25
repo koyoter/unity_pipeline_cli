@@ -58,6 +58,15 @@ Lists project name, PID, Unity version, installed Pipeline package version, serv
 
 Automatically checks GitHub for a new version: when one exists, it shows the release notes and, after your confirmation, downloads (with a progress bar) and replaces the running binary — no manual download needed.
 
+### `language` — show / switch UI language
+
+```bash
+unity_pipeline_cli language      # show the current language
+unity_pipeline_cli language zh   # switch to Chinese (en / zh)
+```
+
+English and Chinese are supported. Without an explicit setting the language is auto-detected in this order: the setting saved by this command → `LANGUAGE` / `LC_ALL` / `LANG` environment variables → OS UI language (Windows API) → English. The setting is stored in the platform config directory (`%APPDATA%\unity_pipeline_cli\language.txt` on Windows).
+
 ### `command` — list / execute pipeline commands
 
 ```bash

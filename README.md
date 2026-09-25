@@ -58,6 +58,15 @@ unity_pipeline_cli install
 
 自动检测 GitHub 上的新版本：有更新时展示更新内容，确认后自动下载（带进度条）并替换当前程序，无需手动下载安装。
 
+### `language` — 查看 / 切换界面语言
+
+```bash
+unity_pipeline_cli language      # 查看当前语言
+unity_pipeline_cli language zh   # 切换到中文（en / zh）
+```
+
+支持英文与中文。不设置时按以下顺序自动判定：本命令保存的设置 → `LANGUAGE` / `LC_ALL` / `LANG` 环境变量 → 操作系统界面语言（Windows API）→ 英文。设置保存在平台配置目录（Windows 为 `%APPDATA%\unity_pipeline_cli\language.txt`）。
+
 ### `command` — 列出 / 执行管线指令
 
 ```bash

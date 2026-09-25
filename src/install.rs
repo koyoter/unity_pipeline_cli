@@ -9,6 +9,7 @@ use patchkit::unified::{parse_patches, splitlines, Hunk, PlainOrBinaryPatch};
 use serde::Deserialize;
 
 use crate::editor::discover_editor_instances;
+use crate::i18n::{t, tr};
 
 const REGISTRY_URL: &str = "https://download.packages.unity.com/com.unity.pipeline/";
 const PACKAGE_ID: &str = "com.unity.pipeline";
@@ -21,12 +22,6 @@ const PATCHS_DIR_NAME: &str = "patchs";
 const SYSTEM_DIR_NAME: &str = "system";
 const CUSTOM_DIR_NAME: &str = "custom";
 const CUSTOM_PATCH_PREFIX: &str = "modify_unity_local_";
-
-const README_TEXT: &str = r#"# patchs 目录说明
-
-- `system/<补丁集>/`：程序自动生成，按包版本分集镜像 exe 内置 patch（如 `legacy/`、`v0.7/`），每次安装时重建，请勿修改；安装时只应用与包版本匹配的那个集合。
-- `custom/`：自定义 patch 放这里，命名 `modify_unity_local_1.patch`、`modify_unity_local_2.patch`……按编号升序在内置 patch 之后依次应用，其他命名的 .patch 文件会被跳过。
-"#;
 
 pub struct Options {
     /// Skip the interactive picker and use this version.
@@ -71,49 +66,50 @@ pub fn run(opts: Options) -> Result<()> {
     let target_project = match pick_target_project()? {
         Some(p) => p,
         None => {
-            return Err(anyhow!(
-                "未检测到正在运行的 Unity Editor 实例，install 流程已停止。\n请先在 Unity Hub 或 Unity Editor 中打开一个项目后再重试。"
-            ));
+            return Err(anyhow!("{}", t("install.no_editor_instance")));
         }
     };
-    println!("📌 目标项目：{}", target_project.display());
+    println!("{}", tr("install.target_project", &[&target_project.display()]));
 
-    println!("🔍 拉取 {} 的版本列表…", PACKAGE_ID);
-    let body = http_get_text(REGISTRY_URL).context("拉取 UPM 版本列表失败")?;
+    println!("{}", tr("install.fetching_versions", &[&PACKAGE_ID]));
+    let body = http_get_text(REGISTRY_URL).context(t("install.fetch_packument_failed"))?;
     let packument: Packument = serde_json::from_str(&body)
-        .with_context(|| format!("解析 {REGISTRY_URL} 的 JSON 响应失败"))?;
+        .with_context(|| tr("install.parse_json_response_failed", &[&REGISTRY_URL]))?;
 
     let latest = packument.dist_tags.as_ref().and_then(|t| t.latest.clone());
     let versions = sort_versions(packument.versions.keys().cloned().collect());
     if versions.is_empty() {
-        return Err(anyhow!("registry 返回的版本列表为空"));
+        return Err(anyhow!("{}", t("install.empty_version_list")));
     }
 
     let chosen = pick_version(&opts, &versions, latest.as_deref(), &packument)?;
     let entry = packument
         .versions
         .get(&chosen)
-        .ok_or_else(|| anyhow!("registry 中不存在版本 {chosen}"))?;
+        .ok_or_else(|| anyhow!("{}", tr("install.version_not_found", &[&chosen])))?;
     let tarball = entry
         .dist
         .as_ref()
         .and_then(|d| d.tarball.as_deref())
-        .ok_or_else(|| anyhow!("版本 {chosen} 缺少 dist.tarball 字段"))?;
+        .ok_or_else(|| anyhow!("{}", tr("install.missing_dist_tarball", &[&chosen])))?;
     let expected_shasum = entry.dist.as_ref().and_then(|d| d.shasum.as_deref());
 
     let cwd = std::env::current_dir()?;
     let downloads_dir = cwd.join("downloads");
     fs::create_dir_all(&downloads_dir).with_context(|| {
-        format!("创建 downloads 目录失败：{}", downloads_dir.display())
+        tr("install.create_downloads_dir_failed", &[&downloads_dir.display()])
     })?;
 
     let file_name = tarball_file_name(tarball, &chosen);
     let tarball_path = downloads_dir.join(&file_name);
 
     if tarball_path.exists() && opts.keep_cache {
-        println!("📦 使用缓存 {}", tarball_path.display());
+        println!("{}", tr("install.using_cache", &[&tarball_path.display()]));
     } else {
-        println!("⬇️  下载 {} → {}", tarball, tarball_path.display());
+        println!(
+            "{}",
+            tr("install.downloading", &[&tarball, &tarball_path.display()])
+        );
         download(tarball, &tarball_path)?;
     }
 
@@ -122,10 +118,11 @@ pub fn run(opts: Options) -> Result<()> {
         if let Ok(actual) = sha1_hex(&tarball_path) {
             if !actual.eq_ignore_ascii_case(sha) {
                 return Err(anyhow!(
-                    "SHA1 校验失败：预期 {sha}，实际 {actual}"
+                    "{}",
+                    tr("install.sha1_mismatch", &[&sha, &actual])
                 ));
             }
-            println!("🔐 SHA1 校验通过：{actual}");
+            println!("{}", tr("install.sha1_ok", &[&actual]));
         }
     }
 
@@ -136,17 +133,19 @@ pub fn run(opts: Options) -> Result<()> {
     if extract_root.exists() {
         // Clean any stale contents so a re-run doesn't blend two versions.
         fs::remove_dir_all(&extract_root).with_context(|| {
-            format!("清理已存在的解压目录失败：{}", extract_root.display())
+            tr("install.clean_extract_dir_failed", &[&extract_root.display()])
         })?;
     }
     fs::create_dir_all(&extract_root).with_context(|| {
-        format!("创建解压目录失败：{}", extract_root.display())
+        tr("install.create_extract_dir_failed", &[&extract_root.display()])
     })?;
 
     println!(
-        "📤 解压 {} → {}",
-        tarball_path.display(),
-        extract_root.display()
+        "{}",
+        tr(
+            "install.extracting",
+            &[&tarball_path.display(), &extract_root.display()]
+        )
     );
     extract_tarball(&tarball_path, &extract_root)?;
 
@@ -154,92 +153,98 @@ pub fn run(opts: Options) -> Result<()> {
     if !package_dir.exists() {
         // Non-standard tarball layout (no "package/" root). We can still report
         // the extraction, but patch + copy target expects the UPM layout.
-        println!("✅ tarball 已解压到 {}", extract_root.display());
-        return Err(anyhow!(
-            "tarball 缺少 `package/` 目录，无法继续 patch/复制流程"
-        ));
+        println!("{}", tr("install.tarball_extracted", &[&extract_root.display()]));
+        return Err(anyhow!("{}", t("install.missing_package_dir")));
     }
-    println!("✅ 已解压至：{}", package_dir.display());
+    println!("{}", tr("install.extracted_to", &[&package_dir.display()]));
 
     // Step 1.5: 选择与包版本匹配的内置补丁集。上游内容随版本漂移（如
     // 0.7.0-exp.1 起 CodeAnalysis 下的 DLL/.meta 全部加了 `UnityPipeline.` 前
     // 缀），静态补丁无法跨版本通吃；规则表见 build.rs `PATCH_SET_RULES`。
     let package_version = read_package_version(&package_dir)?;
     let patch_set = select_patch_set(&package_version)?;
-    println!("🧩 包版本 {package_version} → 补丁集 {patch_set}");
+    println!(
+        "{}",
+        tr("install.version_patch_set", &[&package_version, &patch_set])
+    );
 
     // Step 2: materialize the patchs/ tree (system mirror + custom dir), then
     // load every patch file in apply order: all of system/<补丁集>/, then custom/.
     let patchs_root = prepare_patchs_tree(&cwd)?;
     let patch_sources = collect_patch_sources(&patchs_root, patch_set)?;
-    println!(
-        "🧩 应用顺序：{}",
-        patch_sources
-            .iter()
-            .map(|(s, _)| s.as_str())
-            .collect::<Vec<_>>()
-            .join(" → ")
-    );
+    let apply_order = patch_sources
+        .iter()
+        .map(|(s, _)| s.as_str())
+        .collect::<Vec<_>>()
+        .join(" → ");
+    println!("{}", tr("install.apply_order", &[&apply_order]));
 
     let mut file_patches = Vec::new();
     for (source, path) in &patch_sources {
         file_patches.extend(
-            load_patch(source, path).with_context(|| format!("加载 {source} 失败"))?,
+            load_patch(source, path)
+                .with_context(|| tr("install.load_patch_failed", &[&source]))?,
         );
     }
 
-    println!("🔎 检查 patch 是否可应用（dry-run）…");
+    println!("{}", t("install.dry_run_checking"));
     match dry_run_patches(&file_patches, &package_dir) {
-        Ok(()) => println!("✅ patch 检查通过"),
+        Ok(()) => println!("{}", t("install.dry_run_ok")),
         Err(err) => {
             eprintln!(
-                "❌ 包版本 {package_version} 暂无适用的 patch 集（选中：{patch_set}）。"
+                "{}",
+                tr("install.no_patch_set", &[&package_version, &patch_set])
             );
-            eprintln!("   目标  : {}", package_dir.display());
-            eprintln!("   详情  : {err:#}");
-            eprintln!(
-                "提示：自定义修改请放到 patchs/custom/modify_unity_local_N.patch 后重试。"
-            );
-            return Err(anyhow!("patch dry-run 失败"));
+            eprintln!("{}", tr("install.dry_run_target", &[&package_dir.display()]));
+            eprintln!("{}", tr("install.dry_run_detail", &[&format!("{err:#}")]));
+            eprintln!("{}", t("install.custom_patch_hint"));
+            return Err(anyhow!("{}", t("install.dry_run_failed")));
         }
     }
 
     // Apply the patch for real.
-    println!("🩹 应用 patch …");
-    apply_patches(&file_patches, &package_dir).context("应用 patch 失败")?;
-    println!("✅ patch 已应用");
+    println!("{}", t("install.applying_patches"));
+    apply_patches(&file_patches, &package_dir).context(t("install.apply_patches_failed"))?;
+    println!("{}", t("install.patches_applied"));
 
     // Step 3: copy the patched package into the target project's Packages/ dir.
     let dest_dir = target_project.join("Packages").join(PACKAGE_ID);
     if dest_dir.exists() {
-        println!("♻️  已存在 {}，先清理旧内容", dest_dir.display());
+        println!(
+            "{}",
+            tr("install.cleaning_existing", &[&dest_dir.display()])
+        );
         fs::remove_dir_all(&dest_dir).with_context(|| {
-            format!("清理已存在的目标目录失败：{}", dest_dir.display())
+            tr("install.clean_dest_dir_failed", &[&dest_dir.display()])
         })?;
     }
     fs::create_dir_all(&dest_dir).with_context(|| {
-        format!("创建目标目录失败：{}", dest_dir.display())
+        tr("install.create_dest_dir_failed", &[&dest_dir.display()])
     })?;
     println!(
-        "📥 复制 {} → {}",
-        package_dir.display(),
-        dest_dir.display()
+        "{}",
+        tr(
+            "install.copying",
+            &[&package_dir.display(), &dest_dir.display()]
+        )
     );
-    copy_dir_recursive(&package_dir, &dest_dir).with_context(|| {
-        format!("复制到 {} 失败", dest_dir.display())
-    })?;
+    copy_dir_recursive(&package_dir, &dest_dir)
+        .with_context(|| tr("install.copy_failed", &[&dest_dir.display()]))?;
 
     // Step 4: final summary.
     println!();
-    println!("🎉 全部完成！");
-    println!("   包版本 : {chosen}");
-    println!("   项目   : {}", target_project.display());
-    println!("   目标   : {}", dest_dir.display());
-    println!("💡 回到 Unity Editor，等待其自动导入 com.unity.pipeline。");
+    println!("{}", t("install.all_done"));
+    println!("{}", tr("install.summary_package_version", &[&chosen]));
+    println!("{}", tr("install.summary_project", &[&target_project.display()]));
+    println!("{}", tr("install.summary_target", &[&dest_dir.display()]));
+    println!("{}", t("install.switch_to_unity"));
     println!();
-    println!("📎 MCP 配置示例（粘贴到 Claude Desktop / Antigravity 等客户端）：");
+    println!("{}", t("install.mcp_config_example"));
     if let Err(err) = crate::configure::print_mcp_config(Some(target_project.as_path())) {
-        eprintln!("⚠️  生成 MCP 配置片段失败：{err:#}");
+        eprintln!(
+            "{}",
+            tr("install.gen_mcp_config_failed", &[&format!("{err:#}")])
+        );
     }
     Ok(())
 }
@@ -265,29 +270,29 @@ fn prepare_patchs_tree(base_dir: &Path) -> Result<PathBuf> {
     let system_dir = root.join(SYSTEM_DIR_NAME);
     let custom_dir = root.join(CUSTOM_DIR_NAME);
     fs::create_dir_all(&custom_dir)
-        .with_context(|| format!("创建目录失败：{}", custom_dir.display()))?;
+        .with_context(|| tr("install.create_dir_failed", &[&custom_dir.display()]))?;
 
     let readme = root.join("README.md");
     if !readme.exists() {
-        fs::write(&readme, README_TEXT)
-            .with_context(|| format!("写入 README 失败：{}", readme.display()))?;
+        fs::write(&readme, t("install.patchs_readme"))
+            .with_context(|| tr("install.write_readme_failed", &[&readme.display()]))?;
     }
 
     if system_dir.exists() {
         fs::remove_dir_all(&system_dir).with_context(|| {
-            format!("清理 system patch 目录失败：{}", system_dir.display())
+            tr("install.clean_system_dir_failed", &[&system_dir.display()])
         })?;
     }
     fs::create_dir_all(&system_dir).with_context(|| {
-        format!("创建 system patch 目录失败：{}", system_dir.display())
+        tr("install.create_system_dir_failed", &[&system_dir.display()])
     })?;
     for (set, name, bytes) in EMBEDDED_PATCHES {
         let dir = system_dir.join(set);
         fs::create_dir_all(&dir).with_context(|| {
-            format!("创建 system 补丁集目录失败：{}", dir.display())
+            tr("install.create_patch_set_dir_failed", &[&dir.display()])
         })?;
         fs::write(dir.join(name), bytes)
-            .with_context(|| format!("写出内置 patch 失败：{set}/{name}"))?;
+            .with_context(|| tr("install.write_embedded_patch_failed", &[&set, &name]))?;
     }
     Ok(root)
 }
@@ -301,9 +306,9 @@ fn collect_patch_sources(root: &Path, patch_set: &str) -> Result<Vec<(String, Pa
     let system_dir = root.join(SYSTEM_DIR_NAME).join(patch_set);
     let mut system: Vec<PathBuf> = fs::read_dir(&system_dir)
         .with_context(|| {
-            format!(
-                "读取 system/{patch_set} patch 目录失败：{}",
-                system_dir.display()
+            tr(
+                "install.read_system_dir_failed",
+                &[&patch_set, &system_dir.display()],
             )
         })?
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -318,7 +323,7 @@ fn collect_patch_sources(root: &Path, patch_set: &str) -> Result<Vec<(String, Pa
     let custom_dir = root.join(CUSTOM_DIR_NAME);
     let mut custom: Vec<(usize, String, PathBuf)> = Vec::new();
     for entry in fs::read_dir(&custom_dir)
-        .with_context(|| format!("读取 custom patch 目录失败：{}", custom_dir.display()))?
+        .with_context(|| tr("install.read_custom_dir_failed", &[&custom_dir.display()]))?
     {
         let path = entry?.path();
         if path.extension().map_or(true, |e| e != "patch") {
@@ -332,8 +337,8 @@ fn collect_patch_sources(root: &Path, patch_set: &str) -> Result<Vec<(String, Pa
         match num {
             Some(n) => custom.push((n, name, path)),
             None => println!(
-                "⚠️  跳过 custom/{name}：自定义 patch 需命名为 {}<N>.patch",
-                CUSTOM_PATCH_PREFIX
+                "{}",
+                tr("install.skip_custom_patch", &[&name, &CUSTOM_PATCH_PREFIX])
             ),
         }
     }
@@ -349,18 +354,20 @@ fn collect_patch_sources(root: &Path, patch_set: &str) -> Result<Vec<(String, Pa
 fn read_package_version(package_dir: &Path) -> Result<String> {
     let path = package_dir.join("package.json");
     let raw = fs::read_to_string(&path).with_context(|| {
-        format!(
-            "读取 {} 失败（无法确定包版本，补丁集选择中止）",
-            path.display()
-        )
+        tr("install.read_package_json_failed", &[&path.display()])
     })?;
     let value: serde_json::Value = serde_json::from_str(&raw)
-        .with_context(|| format!("解析 {} 失败", path.display()))?;
+        .with_context(|| tr("install.parse_package_json_failed", &[&path.display()]))?;
     value
         .get("version")
         .and_then(|v| v.as_str())
         .map(|v| v.to_owned())
-        .ok_or_else(|| anyhow!("{} 缺少 `version` 字段，无法选择补丁集", path.display()))
+        .ok_or_else(|| {
+            anyhow!(
+                "{}",
+                tr("install.missing_version_field", &[&path.display()])
+            )
+        })
 }
 
 /// Pick the embedded patch set for a package version: the rule with the
@@ -369,11 +376,11 @@ fn read_package_version(package_dir: &Path) -> Result<String> {
 /// wrong set would only fail later with a much more confusing dry-run report.
 fn select_patch_set(package_version: &str) -> Result<&'static str> {
     let pkg = semver::Version::parse(package_version)
-        .with_context(|| format!("解析包版本 `{package_version}` 失败"))?;
+        .with_context(|| tr("install.parse_package_version_failed", &[&package_version]))?;
     let mut best: Option<(semver::Version, &'static str)> = None;
     for (set, from) in PATCH_SET_RULES {
         let from = semver::Version::parse(from)
-            .with_context(|| format!("补丁集 `{set}` 的起始版本 `{from}` 非法"))?;
+            .with_context(|| tr("install.invalid_patch_set_from", &[&set, &from]))?;
         if pkg >= from && best.as_ref().map_or(true, |(b, _)| from > *b) {
             best = Some((from, set));
         }
@@ -397,25 +404,44 @@ struct FilePatch {
 /// dropped like `patcher` did.
 fn load_patch(source: &str, patch_path: &Path) -> Result<Vec<FilePatch>> {
     let raw = fs::read(patch_path)
-        .with_context(|| format!("读取 patch 失败（{source}）：{}", patch_path.display()))?;
+        .with_context(|| tr("install.read_patch_failed", &[&source, &patch_path.display()]))?;
     let lines = splitlines(&raw).map(|l| l.to_vec());
     let mut out = Vec::new();
     for (idx, item) in parse_patches(lines).enumerate() {
-        let plain = item.map_err(|e| anyhow!("{source} 第 {} 段解析失败：{e:?}", idx + 1))?;
+        let plain = item.map_err(|e| {
+            anyhow!(
+                "{}",
+                tr(
+                    "install.hunk_parse_failed",
+                    &[&source, &(idx + 1), &format!("{e:?}")]
+                )
+            )
+        })?;
         let unified = match plain {
             PlainOrBinaryPatch::Plain(u) => u,
             PlainOrBinaryPatch::Binary(b) => {
                 return Err(anyhow!(
-                    "{source} 含二进制段（{}），当前流程只处理文本 hunk",
-                    String::from_utf8_lossy(&b.0)
+                    "{}",
+                    tr(
+                        "install.binary_segment",
+                        &[&source, &String::from_utf8_lossy(&b.0)]
+                    )
                 ));
             }
         };
         let header_path = String::from_utf8(unified.mod_name.clone())
-            .map_err(|_| anyhow!("{source} 第 {} 段的目标文件名不是 UTF-8", idx + 1))?;
+            .map_err(|_| {
+                anyhow!(
+                    "{}",
+                    tr("install.hunk_target_not_utf8", &[&source, &(idx + 1)])
+                )
+            })?;
         let rel_str = strip_ab_prefix(&header_path);
         if rel_str.is_empty() {
-            return Err(anyhow!("{source} 第 {} 段缺少目标文件名", idx + 1));
+            return Err(anyhow!(
+                "{}",
+                tr("install.hunk_missing_target", &[&source, &(idx + 1)])
+            ));
         }
         let rel_path = PathBuf::from(rel_str.replace('/', std::path::MAIN_SEPARATOR_STR));
         out.push(FilePatch {
@@ -426,7 +452,7 @@ fn load_patch(source: &str, patch_path: &Path) -> Result<Vec<FilePatch>> {
         });
     }
     if out.is_empty() {
-        return Err(anyhow!("{source} 中未发现任何可用的文本 hunk"));
+        return Err(anyhow!("{}", tr("install.no_text_hunks", &[&source])));
     }
     Ok(out)
 }
@@ -446,10 +472,9 @@ fn dry_run_patches(patches: &[FilePatch], target_dir: &Path) -> Result<()> {
     for fp in patches {
         let path = target_dir.join(&fp.rel_path);
         let base = fs::read(&path).with_context(|| {
-            format!(
-                "读取目标文件失败（patch 路径 `{}`）：{}",
-                fp.header_path,
-                path.display()
+            tr(
+                "install.read_target_failed_with_patch_path",
+                &[&fp.header_path, &path.display()],
             )
         })?;
         let result = dry_run(&base, &fp.hunks, &opts);
@@ -458,10 +483,11 @@ fn dry_run_patches(patches: &[FilePatch], target_dir: &Path) -> Result<()> {
         let rejected = result.rejected().count();
         if rejected > 0 {
             return Err(anyhow!(
-                "{} 的 {} 中 {} 段 hunk 无法应用",
-                fp.source,
-                fp.header_path,
-                rejected
+                "{}",
+                tr(
+                    "install.hunks_rejected",
+                    &[&fp.source, &fp.header_path, &rejected]
+                )
             ));
         }
     }
@@ -475,20 +501,21 @@ fn apply_patches(patches: &[FilePatch], target_dir: &Path) -> Result<()> {
     for fp in patches {
         let path = target_dir.join(&fp.rel_path);
         let base = fs::read(&path).with_context(|| {
-            format!("读取目标文件失败：{}", path.display())
+            tr("install.read_target_failed", &[&path.display()])
         })?;
         let result = apply_fuzzy(&base, &fp.hunks, &opts);
         let rejected_count = result.rejected().count();
         let patched = result.patched.ok_or_else(|| {
             anyhow!(
-                "应用 {}（{}）时失败：{} 段 hunk 未能匹配",
-                fp.source,
-                fp.header_path,
-                rejected_count
+                "{}",
+                tr(
+                    "install.apply_hunks_failed",
+                    &[&fp.source, &fp.header_path, &rejected_count]
+                )
             )
         })?;
         fs::write(&path, patched).with_context(|| {
-            format!("写回打过 patch 的文件失败：{}", path.display())
+            tr("install.write_patched_file_failed", &[&path.display()])
         })?;
     }
     Ok(())
@@ -497,14 +524,17 @@ fn apply_patches(patches: &[FilePatch], target_dir: &Path) -> Result<()> {
 /// Show a numbered list of running Unity Editors and let the user pick one.
 /// Returns `Ok(None)` when the user cancels (input `0` or empty when no default).
 fn pick_target_project() -> Result<Option<PathBuf>> {
-    println!("\n🎯 查找正在运行的 Unity Editor 实例…");
-    let instances = discover_editor_instances().context("扫描 Unity 实例失败")?;
+    println!("{}", t("install.finding_editors"));
+    let instances = discover_editor_instances().context(t("install.scan_editors_failed"))?;
     if instances.is_empty() {
-        println!("💤 未检测到正在运行的 Unity Editor 实例。");
+        println!("{}", t("install.no_editors_found"));
         return Ok(None);
     }
 
-    println!("\n📋 可选项目（{}）：\n", instances.len());
+    println!(
+        "{}",
+        tr("install.pick_project_header", &[&instances.len()])
+    );
     let width = instances.len().to_string().len();
     for (idx, inst) in instances.iter().enumerate() {
         println!(
@@ -517,20 +547,20 @@ fn pick_target_project() -> Result<Option<PathBuf>> {
         println!("     {}", inst.project_path.display());
     }
     println!();
-    print!(
-        "请选择目标项目 [1-{}, 回车默认 1，0 跳过]：",
-        instances.len()
-    );
+    print!("{}", tr("install.pick_project_prompt", &[&instances.len()]));
     std::io::stdout().flush().ok();
 
     let mut line = String::new();
     std::io::stdin()
         .lock()
         .read_line(&mut line)
-        .context("读取用户输入失败")?;
+        .context(t("install.read_input_failed"))?;
     let trimmed = line.trim();
     if trimmed.is_empty() {
-        println!("➡️  默认选择 1：{}", instances[0].project_name);
+        println!(
+            "{}",
+            tr("install.pick_project_default", &[&instances[0].project_name])
+        );
         return Ok(Some(instances[0].project_path.clone()));
     }
     if trimmed == "0" {
@@ -538,9 +568,9 @@ fn pick_target_project() -> Result<Option<PathBuf>> {
     }
     let n: usize = trimmed
         .parse()
-        .map_err(|_| anyhow!("无法识别的选择：{trimmed}"))?;
+        .map_err(|_| anyhow!("{}", tr("install.invalid_choice", &[&trimmed])))?;
     if n < 1 || n > instances.len() {
-        return Err(anyhow!("超出范围的选择：{n}"));
+        return Err(anyhow!("{}", tr("install.choice_out_of_range", &[&n])));
     }
     Ok(Some(instances[n - 1].project_path.clone()))
 }
@@ -562,10 +592,9 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else if file_type.is_file() {
             fs::copy(&src_path, &dst_path).with_context(|| {
-                format!(
-                    "复制文件失败：{} → {}",
-                    src_path.display(),
-                    dst_path.display()
+                tr(
+                    "install.copy_file_failed",
+                    &[&src_path.display(), &dst_path.display()],
                 )
             })?;
         }
@@ -585,20 +614,26 @@ fn pick_version(
             return Ok(explicit.to_owned());
         }
         return Err(anyhow!(
-            "registry 中不存在版本 {explicit}，可用版本：{}",
-            versions.join(", ")
+            "{}",
+            tr(
+                "install.version_not_found_with_available",
+                &[&explicit, &versions.join(", ")]
+            )
         ));
     }
     if opts.latest {
         let pick = latest
             .map(|s| s.to_owned())
             .or_else(|| versions.first().cloned())
-            .ok_or_else(|| anyhow!("无法从 registry 中解析出 latest 版本"))?;
+            .ok_or_else(|| anyhow!("{}", t("install.cannot_resolve_latest")))?;
         return Ok(pick);
     }
 
     // Interactive picker.
-    println!("\n📋 可用版本（{}）：\n", versions.len());
+    println!(
+        "{}",
+        tr("install.pick_version_header", &[&versions.len()])
+    );
     let width = versions.len().to_string().len();
     for (idx, v) in versions.iter().enumerate() {
         let marker = if Some(v.as_str()) == latest { "  ← latest" } else { "" };
@@ -608,9 +643,11 @@ fn pick_version(
     let default_version = &versions[default_pick];
     println!();
     print!(
-        "请选择要安装的版本 [1-{}, 回车默认 {}]：",
-        versions.len(),
-        default_version
+        "{}",
+        tr(
+            "install.pick_version_prompt",
+            &[&versions.len(), &default_version]
+        )
     );
     std::io::stdout().flush().ok();
 
@@ -619,7 +656,7 @@ fn pick_version(
     stdin
         .lock()
         .read_line(&mut line)
-        .context("读取用户输入失败")?;
+        .context(t("install.read_input_failed"))?;
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return Ok(default_version.clone());
@@ -633,7 +670,7 @@ fn pick_version(
     if versions.iter().any(|v| v == trimmed) {
         return Ok(trimmed.to_owned());
     }
-    Err(anyhow!("无法识别的选择：{trimmed}"))
+    Err(anyhow!("{}", tr("install.invalid_choice", &[&trimmed])))
 }
 
 fn tarball_file_name(url: &str, version: &str) -> String {
@@ -647,7 +684,12 @@ fn tarball_file_name(url: &str, version: &str) -> String {
 pub(crate) fn download(url: &str, dest: &Path) -> Result<()> {
     let dest_str = dest
         .to_str()
-        .ok_or_else(|| anyhow!("目标路径包含非 UTF-8 字符：{}", dest.display()))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "{}",
+                tr("install.dest_path_not_utf8", &[&dest.display()])
+            )
+        })?;
     let status = Command::new("curl")
         .args([
             "-fSL",
@@ -662,11 +704,14 @@ pub(crate) fn download(url: &str, dest: &Path) -> Result<()> {
         ])
         .stdin(Stdio::null())
         .status()
-        .context("启动 curl 失败（Windows 10+/macOS 均默认已内置）")?;
+        .context(t("install.start_curl_failed_hint"))?;
     if !status.success() {
         return Err(anyhow!(
-            "curl 下载失败（exit code = {:?}）",
-            status.code()
+            "{}",
+            tr(
+                "install.curl_download_failed",
+                &[&format!("{:?}", status.code())]
+            )
         ));
     }
     Ok(())
@@ -675,17 +720,33 @@ pub(crate) fn download(url: &str, dest: &Path) -> Result<()> {
 pub(crate) fn extract_tarball(tarball: &Path, dest: &Path) -> Result<()> {
     let tarball_str = tarball
         .to_str()
-        .ok_or_else(|| anyhow!("tarball 路径包含非 UTF-8 字符：{}", tarball.display()))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "{}",
+                tr("install.tarball_path_not_utf8", &[&tarball.display()])
+            )
+        })?;
     let dest_str = dest
         .to_str()
-        .ok_or_else(|| anyhow!("目标目录包含非 UTF-8 字符：{}", dest.display()))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "{}",
+                tr("install.dest_dir_not_utf8", &[&dest.display()])
+            )
+        })?;
     let status = Command::new("tar")
         .args(["-xzf", tarball_str, "-C", dest_str])
         .stdin(Stdio::null())
         .status()
-        .context("启动 tar 失败（Windows 10+/macOS 均默认已内置）")?;
+        .context(t("install.start_tar_failed_hint"))?;
     if !status.success() {
-        return Err(anyhow!("tar 解压失败（exit code = {:?}）", status.code()));
+        return Err(anyhow!(
+            "{}",
+            tr(
+                "install.tar_extract_failed",
+                &[&format!("{:?}", status.code())]
+            )
+        ));
     }
     Ok(())
 }
@@ -697,16 +758,18 @@ pub(crate) fn http_get_text(url: &str) -> Result<String> {
         .stderr(Stdio::piped())
         .stdout(Stdio::piped())
         .output()
-        .context("启动 curl 失败")?;
+        .context(t("install.start_curl_failed"))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow!(
-            "curl 请求 {url} 失败（exit = {:?}）：{}",
-            output.status.code(),
-            err.trim()
+            "{}",
+            tr(
+                "install.curl_request_failed",
+                &[&url, &format!("{:?}", output.status.code()), &err.trim()]
+            )
         ));
     }
-    String::from_utf8(output.stdout).context("registry 返回内容不是有效的 UTF-8")
+    String::from_utf8(output.stdout).context(t("install.registry_not_utf8"))
 }
 
 /// Stream the file through the sha1 crate. Kept as a bounded-buffer read so we
@@ -716,13 +779,13 @@ fn sha1_hex(path: &Path) -> Result<String> {
     use std::io::Read;
 
     let mut file = fs::File::open(path)
-        .with_context(|| format!("打开 SHA1 目标文件失败：{}", path.display()))?;
+        .with_context(|| tr("install.open_sha1_file_failed", &[&path.display()]))?;
     let mut hasher = Sha1::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
         let n = file
             .read(&mut buf)
-            .with_context(|| format!("读取 SHA1 目标文件失败：{}", path.display()))?;
+            .with_context(|| tr("install.read_sha1_file_failed", &[&path.display()]))?;
         if n == 0 {
             break;
         }

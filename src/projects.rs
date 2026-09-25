@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde_json::json;
 
 use crate::editor::{discover_editor_instances, EditorInstance};
+use crate::i18n::{t, tr};
 
 pub fn run(as_json: bool) -> Result<()> {
     let instances = discover_editor_instances()?;
@@ -77,15 +78,15 @@ fn print_json(instances: &[EditorInstance]) {
 
 fn print_human(instances: &[EditorInstance]) {
     if instances.is_empty() {
-        println!("没有打开的 Unity 项目");
-        println!("提示：请先在 Unity Hub 或 Unity Editor 中打开一个项目，再运行该命令。");
+        println!("{}", t("projects.no_open_projects"));
+        println!("{}", t("projects.hint_open_project"));
         return;
     }
 
-    println!("发现 {} 个正在运行的 Unity Editor：", instances.len());
+    println!("{}", tr("projects.found_editors", &[&instances.len()]));
     println!();
     for (i, inst) in instances.iter().enumerate() {
-        let version = inst.unity_version.as_deref().unwrap_or("未知");
+        let version = inst.unity_version.as_deref().unwrap_or(t("projects.unknown_version"));
         println!(
             "{}. {} (PID {}, Unity {})",
             i + 1,
@@ -93,7 +94,7 @@ fn print_human(instances: &[EditorInstance]) {
             inst.pid,
             version
         );
-        println!("   路径 : {}", inst.project_path.display());
+        println!("{}", tr("projects.path", &[&inst.project_path.display()]));
         if inst.has_pipeline {
             let ver = inst.pipeline_version.as_deref().unwrap_or("");
             let suffix = if ver.is_empty() {
@@ -101,13 +102,13 @@ fn print_human(instances: &[EditorInstance]) {
             } else {
                 format!(" ({ver})")
             };
-            println!("   Pipeline : 已安装{suffix}");
+            println!("{}", tr("projects.pipeline_installed", &[&suffix]));
             match &inst.descriptor {
                 Some(d) => {
                     let state = if inst.is_reachable {
-                        "可连接"
+                        t("projects.state_connected")
                     } else {
-                        "不可达"
+                        t("projects.state_unreachable")
                     };
                     // A batchmode Editor cannot show modal dialogs, so the distinction decides
                     // whether the guidance below can apply at all.
@@ -116,21 +117,22 @@ fn print_human(instances: &[EditorInstance]) {
                     } else {
                         ""
                     };
-                    println!("   服务 : {state}  (127.0.0.1:{}){mode}", d.port);
+                    println!(
+                        "{}",
+                        tr("projects.server_line", &[&state, &d.port, &mode])
+                    );
                     if let Some(info) = d.info.as_deref() {
-                        println!("   提示 : {info}");
+                        println!("{}", tr("projects.server_info", &[&info]));
                     }
                 }
                 None => {
-                    println!("   服务 : 未启动（Editor 尚未创建 .unity-pipeline-port 描述符）");
+                    println!("{}", t("projects.server_not_started"));
                 }
             }
         } else {
-            println!("   Pipeline : 未安装");
+            println!("{}", t("projects.pipeline_not_installed"));
             let cli = cli_invocation_name();
-            println!(
-                "   提示 : 尚未安装 Pipeline 包，先运行 `{cli} install`（会列出正在运行的 Editor 供选择）"
-            );
+            println!("{}", tr("projects.hint_install", &[&cli]));
         }
         println!();
     }

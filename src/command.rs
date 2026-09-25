@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use serde_json::{json, Map, Value};
 
+use crate::i18n::{t, tr};
 use crate::pipeline::{
     self, ensure_reachable, execute, fetch_commands, find_target, is_failed_eval_envelope,
     ExecBudget, PipelineCommand, Target,
@@ -111,19 +112,19 @@ fn list_commands(target: &Target, as_json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("🔗 已连接 Unity Editor Pipeline 服务：127.0.0.1:{}", target.port);
-    println!("📁 项目：{}", target.project_path.display());
+    println!("{}", tr("command.connected", &[&target.port]));
+    println!("{}", tr("command.project", &[&target.project_path.display()]));
     if let Some(server) = &catalog.server {
         let version = server.get("version").and_then(|v| v.as_str()).unwrap_or("?");
         let port = server.get("port").and_then(|v| v.as_u64()).unwrap_or(target.port as u64);
-        println!("🌐 服务版本 v{version} · 端口 {port}");
+        println!("{}", tr("command.server_version", &[&version, &port]));
     }
     let cmds = &catalog.commands;
     if cmds.is_empty() {
-        println!("\n❌ 未发现任何可用指令");
+        println!("{}", t("command.no_commands"));
         return Ok(());
     }
-    println!("\n📋 可用指令（{} 条）：\n", cmds.len());
+    println!("{}", tr("command.available_commands", &[&cmds.len()]));
     let width = cmds.len().to_string().len();
     for (idx, cmd) in cmds.iter().enumerate() {
         let name = cmd.name.as_deref().unwrap_or("<unnamed>");
@@ -153,14 +154,14 @@ fn list_commands(target: &Target, as_json: bool) -> Result<()> {
             println!("       --{pname}: {desc}{req}{default}");
         }
     }
-    println!("\n💡 用法：unity command <name> [--param value]");
-    println!("📖 例如：unity command editor_play");
+    println!("{}", t("command.usage"));
+    println!("{}", t("command.example"));
     if let Some(sample) = cmds.iter().find(|c| !c.parameters.is_empty()) {
         if let (Some(cname), Some(pname)) = (
             sample.name.as_deref(),
             sample.parameters.first().and_then(|p| p.name.as_deref()),
         ) {
-            println!("📖 例如：unity command {cname} --{pname} value");
+            println!("{}", tr("command.example_with_param", &[&cname, &pname]));
         }
     }
     Ok(())
@@ -180,13 +181,13 @@ fn run_command(
 
     if let Some(cmd) = schema.as_ref() {
         if let Some(unknown) = unknown_parameter(cmd, &parameters) {
-            let msg = format!("{name} 的参数无效：没有参数 --{unknown}");
+            let msg = tr("command.invalid_parameter", &[&name, &unknown]);
             if !as_json {
                 eprintln!("❌ {msg}");
-                eprintln!("📖 参数说明：");
+                eprintln!("{}", t("command.parameter_docs"));
                 eprintln!("{}", format_schema_hint(cmd));
             }
-            return Err(anyhow!(msg));
+            return Err(anyhow!("{}", msg));
         }
     }
 
@@ -200,7 +201,7 @@ fn run_command(
         Ok(v) => v,
         Err(err) => {
             if !as_json {
-                eprintln!("❌ 执行失败：{name}");
+                eprintln!("{}", tr("command.execute_failed", &[&name]));
                 eprintln!("   {err:#}");
                 if let Some(note) = pipeline::host_note(target, &err) {
                     eprintln!("⚠️  {note}");
@@ -208,7 +209,7 @@ fn run_command(
                 if let Some(cmd) = schema.as_ref() {
                     let msg = err.to_string();
                     if msg.contains("Parameter") || msg.contains("argument") {
-                        eprintln!("📖 参数说明：");
+                        eprintln!("{}", t("command.parameter_docs"));
                         eprintln!("{}", format_schema_hint(cmd));
                     }
                 }
@@ -240,18 +241,18 @@ fn run_command(
         return Ok(());
     }
 
-    println!("🎮 已执行：{name}");
+    println!("{}", tr("command.executed", &[&name]));
     println!("🔗 127.0.0.1:{}", target.port);
     if !parameters.is_empty() {
         let pretty = crate::json::compact(&Value::Object(parameters.clone()));
-        println!("📋 参数：{pretty}");
+        println!("{}", tr("command.parameters_line", &[&pretty]));
     }
-    println!("✅ 成功");
+    println!("{}", t("command.success"));
     match &result {
-        Value::Null => println!("📤 无返回值"),
-        Value::String(s) => println!("📤 结果：{s}"),
+        Value::Null => println!("{}", t("command.no_return_value")),
+        Value::String(s) => println!("{}", tr("command.result_line", &[&s])),
         other => {
-            println!("📤 结果：");
+            println!("{}", t("command.result_label"));
             println!("{}", crate::json::pretty(other));
         }
     }

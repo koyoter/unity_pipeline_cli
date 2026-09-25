@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde_json::json;
 
+use crate::i18n::t;
+
 /// Print a generic MCP `mcpServers` config entry pointing at the current
 /// binary. Users can paste this into any client that accepts the standard
 /// `{ "mcpServers": { "<name>": { "command": ..., "args": [...] } } }` shape
@@ -31,17 +33,17 @@ pub fn print_mcp_config(project_path: Option<&Path>) -> Result<()> {
     println!("{}", crate::json::pretty(&config));
     if project_path.is_none() {
         eprintln!();
-        eprintln!("提示：以上配置未绑定具体项目。");
-        eprintln!("  • 只开着 1 个装有 Pipeline 的 Unity Editor 时，MCP 会自动连接它。");
-        eprintln!("  • 同时开多个项目时，MCP 会因歧义而启动失败。");
-        eprintln!("    请在 args 中追加 \"--project-path\" \"<项目绝对路径>\" 以锁定目标，例如：");
+        eprintln!("{}", t("configure.hint_not_pinned"));
+        eprintln!("{}", t("configure.hint_single_editor"));
+        eprintln!("{}", t("configure.hint_multi_project_ambiguous"));
+        eprintln!("{}", t("configure.hint_project_path_arg"));
         eprintln!("      \"args\": [\"mcp\", \"--project-path\", \"D:\\\\path\\\\to\\\\YourProject\"]");
-        eprintln!("  • 每个项目可各配置一条 mcpServers 条目（键名不同），互不干扰。");
+        eprintln!("{}", t("configure.hint_per_project_entry"));
     } else {
         eprintln!();
-        eprintln!("提示：以上配置已绑定到指定项目，多项目并存时不会串。");
-        eprintln!("  若需为其他项目也接入 MCP，请再运行一次 `unity install` 或手动复制该条目、");
-        eprintln!("  修改键名及 --project-path 值后追加到 mcpServers 中。");
+        eprintln!("{}", t("configure.hint_pinned"));
+        eprintln!("{}", t("configure.hint_other_projects_1"));
+        eprintln!("{}", t("configure.hint_other_projects_2"));
     }
     Ok(())
 }

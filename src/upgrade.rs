@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
+use crate::i18n::{t, tr};
 use crate::install::{download, extract_tarball, http_get_text};
 
 const RELEASE_API_URL: &str =
@@ -37,48 +38,49 @@ pub fn run() -> Result<()> {
         .last()
         .unwrap_or_default();
 
-    println!("🔍 检查 GitHub 最新 Release…");
+    println!("{}", t("upgrade.checking_release"));
     let release = fetch_latest_release()?;
     if !is_newer(&release.tag_name, current)? {
-        println!("✅ 已是最新版本（{current}），无需更新。");
+        println!("{}", tr("upgrade.already_latest", &[&current]));
         return Ok(());
     }
     let latest = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
 
-    println!("\n🆕 发现新版本：{current} → {latest}");
+    println!("{}", tr("upgrade.found_new_version", &[&current, &latest]));
     let body = release.body.as_deref().unwrap_or_default().trim();
     if !body.is_empty() {
         println!("\n{body}\n");
     }
 
     let asset = pick_asset(&release.assets, platform).ok_or_else(|| {
+        let available = release
+            .assets
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
         anyhow!(
-            "Release {latest} 没有平台 {platform} 的资产（可用：{}）",
-            release
-                .assets
-                .iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
+            "{}",
+            tr("upgrade.no_platform_asset", &[&latest, &platform, &available])
         )
     })?;
 
-    print!("是否更新到 {latest}？[y/N]：");
+    print!("{}", tr("upgrade.confirm_update", &[&latest]));
     io::stdout().flush().ok();
     let mut line = String::new();
-    io::stdin().read_line(&mut line).context("读取用户输入失败")?;
+    io::stdin().read_line(&mut line).context(t("upgrade.read_input_failed"))?;
     if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-        println!("已取消，当前版本保持 {current}。");
+        println!("{}", tr("upgrade.cancelled", &[&current]));
         return Ok(());
     }
 
-    let exe = std::env::current_exe().context("定位当前可执行文件失败")?;
+    let exe = std::env::current_exe().context(t("upgrade.locate_current_exe_failed"))?;
     let exe_dir = exe
         .parent()
-        .ok_or_else(|| anyhow!("无法确定当前可执行文件所在目录"))?;
+        .ok_or_else(|| anyhow!("{}", t("upgrade.unknown_exe_dir")))?;
     let exe_name = exe
         .file_name()
-        .ok_or_else(|| anyhow!("无法确定当前可执行文件名"))?
+        .ok_or_else(|| anyhow!("{}", t("upgrade.unknown_exe_name")))?
         .to_owned();
     let old_path = exe_dir.join(format!("{}.old", exe_name.to_string_lossy()));
 
@@ -86,20 +88,20 @@ pub fn run() -> Result<()> {
     let tmp_dir = exe_dir.join(format!(".upgrade_{}", std::process::id()));
     if tmp_dir.exists() {
         fs::remove_dir_all(&tmp_dir)
-            .with_context(|| format!("清理临时目录 {} 失败", tmp_dir.display()))?;
+            .with_context(|| tr("upgrade.clean_tmp_dir_failed", &[&tmp_dir.display()]))?;
     }
     fs::create_dir_all(&tmp_dir)
-        .with_context(|| format!("创建临时目录 {} 失败", tmp_dir.display()))?;
+        .with_context(|| tr("upgrade.create_tmp_dir_failed", &[&tmp_dir.display()]))?;
 
     let zip_path = tmp_dir.join(&asset.name);
-    println!("⬇️  下载 {} …", asset.name);
+    println!("{}", tr("upgrade.downloading", &[&asset.name]));
     download(&asset.browser_download_url, &zip_path)
-        .with_context(|| format!("下载 {} 失败", asset.browser_download_url))?;
+        .with_context(|| tr("upgrade.download_failed", &[&asset.browser_download_url]))?;
 
-    println!("📤 解压 …");
+    println!("{}", t("upgrade.extracting"));
     let extract_dir = tmp_dir.join("extracted");
     fs::create_dir_all(&extract_dir)
-        .with_context(|| format!("创建解压目录 {} 失败", extract_dir.display()))?;
+        .with_context(|| tr("upgrade.create_extract_dir_failed", &[&extract_dir.display()]))?;
     extract_tarball(&zip_path, &extract_dir)?;
     let new_exe = extracted_file(&extract_dir, &exe)?;
 
@@ -108,15 +110,14 @@ pub fn run() -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&new_exe, fs::Permissions::from_mode(0o755))
-            .with_context(|| format!("设置可执行权限失败：{}", new_exe.display()))?;
+            .with_context(|| tr("upgrade.set_exec_permission_failed", &[&new_exe.display()]))?;
     }
 
     // Windows 不允许覆盖运行中的 exe，但允许改名让位：exe → exe.old，新 exe 入位。
     fs::rename(&exe, &old_path).with_context(|| {
-        format!(
-            "重命名当前 exe 失败（{} → {}）",
-            exe.display(),
-            old_path.display()
+        tr(
+            "upgrade.rename_current_exe_failed",
+            &[&exe.display(), &old_path.display()],
         )
     })?;
     if let Err(err) = fs::rename(&new_exe, &exe) {
@@ -124,10 +125,9 @@ pub fn run() -> Result<()> {
         let _ = fs::rename(&old_path, &exe);
         let _ = fs::remove_dir_all(&tmp_dir);
         return Err(err).with_context(|| {
-            format!(
-                "新 exe 入位失败（{} → {}）",
-                new_exe.display(),
-                exe.display()
+            tr(
+                "upgrade.place_new_exe_failed",
+                &[&new_exe.display(), &exe.display()],
             )
         });
     }
@@ -135,13 +135,14 @@ pub fn run() -> Result<()> {
     // Windows 上运行中的旧 exe 此刻仍被锁，删不掉就留给下次升级时清理。
     let _ = fs::remove_file(&old_path);
 
-    println!("🎉 已更新到 {latest}，重新运行 `unity --version` 可确认。");
+    println!("{}", tr("upgrade.updated", &[&latest]));
     Ok(())
 }
 
 fn fetch_latest_release() -> Result<Release> {
-    let body = http_get_text(RELEASE_API_URL).context("请求 GitHub Releases API 失败")?;
-    serde_json::from_str(&body).with_context(|| format!("解析 {RELEASE_API_URL} 的 JSON 响应失败"))
+    let body = http_get_text(RELEASE_API_URL).context(t("upgrade.release_api_request_failed"))?;
+    serde_json::from_str(&body)
+        .with_context(|| tr("upgrade.parse_release_json_failed", &[&RELEASE_API_URL]))
 }
 
 /// 清掉上次升级留下的 `<exe>.old`。Windows 不允许删除运行中的 exe，所以上次
@@ -166,9 +167,9 @@ fn clean_stale_old_exe() {
 fn is_newer(tag: &str, current: &str) -> Result<bool> {
     let latest = tag.strip_prefix('v').unwrap_or(tag);
     let latest = semver::Version::parse(latest)
-        .with_context(|| format!("解析 Release tag `{tag}` 失败"))?;
-    let current =
-        semver::Version::parse(current).with_context(|| format!("解析当前版本 `{current}` 失败"))?;
+        .with_context(|| tr("upgrade.parse_tag_failed", &[&tag]))?;
+    let current = semver::Version::parse(current)
+        .with_context(|| tr("upgrade.parse_current_version_failed", &[&current]))?;
     Ok(latest > current)
 }
 
@@ -181,7 +182,8 @@ fn pick_asset<'a>(assets: &'a [Asset], platform: &str) -> Option<&'a Asset> {
 
 /// tar.gz 里只有一个根级文件（CI 只打包单个 exe），取出它。
 fn extracted_file(dir: &Path, exe: &Path) -> Result<PathBuf> {
-    let entries = fs::read_dir(dir).with_context(|| format!("读取 {} 失败", dir.display()))?;
+    let entries = fs::read_dir(dir)
+        .with_context(|| tr("upgrade.read_dir_failed", &[&dir.display()]))?;
     let mut files = Vec::new();
     for entry in entries {
         let path = entry?.path();
@@ -192,9 +194,11 @@ fn extracted_file(dir: &Path, exe: &Path) -> Result<PathBuf> {
     match files.as_slice() {
         [only] => Ok(only.clone()),
         _ => Err(anyhow!(
-            "解压后应只有一个 exe 文件，实际 {} 个，无法确定要替换 {} 的目标",
-            files.len(),
-            exe.display()
+            "{}",
+            tr(
+                "upgrade.ambiguous_extracted_file",
+                &[&files.len(), &exe.display()]
+            )
         )),
     }
 }

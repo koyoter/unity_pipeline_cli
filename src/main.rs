@@ -6,6 +6,7 @@ mod command;
 mod configure;
 mod editor;
 mod http;
+mod i18n;
 mod install;
 mod json;
 mod mcp;
@@ -87,6 +88,11 @@ enum TopCommand {
     },
     /// Check the latest GitHub release, confirm, then download and replace this binary.
     Upgrade,
+    /// Show or set the interface language (`en`, `zh`).
+    Language {
+        /// Language code to switch to. Omit to show the current one.
+        code: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -96,13 +102,14 @@ enum ConfigureTarget {
 }
 
 fn main() -> ExitCode {
+    i18n::init();
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {
             let _ = e.print();
             // 如果用户没有传递任何参数（通常是双击运行的情况），则暂停以防窗口一闪而过
             if std::env::args().count() <= 1 {
-                println!("\n按回车键退出...");
+                println!("{}", i18n::t("main.press_enter_exit"));
                 let mut buf = String::new();
                 let _ = std::io::stdin().read_line(&mut buf);
             }
@@ -114,14 +121,14 @@ fn main() -> ExitCode {
         TopCommand::Projects { json } => match projects::run(json) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("Error: {err:#}");
+                eprintln!("{}: {err:#}", i18n::t("error.prefix"));
                 ExitCode::from(1)
             }
         },
         TopCommand::Mcp { project_path } => match mcp::run(mcp::Options { project_path }) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("Error: {err:#}");
+                eprintln!("{}: {err:#}", i18n::t("error.prefix"));
                 ExitCode::from(1)
             }
         },
@@ -142,7 +149,7 @@ fn main() -> ExitCode {
             match result {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(err) => {
-                    eprintln!("Error: {err:#}");
+                    eprintln!("{}: {err:#}", i18n::t("error.prefix"));
                     ExitCode::from(1)
                 }
             }
@@ -158,7 +165,7 @@ fn main() -> ExitCode {
         }) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("Error: {err:#}");
+                eprintln!("{}: {err:#}", i18n::t("error.prefix"));
                 ExitCode::from(1)
             }
         },
@@ -166,7 +173,7 @@ fn main() -> ExitCode {
             ConfigureTarget::Mcp => match configure::print_mcp_config(None) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(err) => {
-                    eprintln!("Error: {err:#}");
+                    eprintln!("{}: {err:#}", i18n::t("error.prefix"));
                     ExitCode::from(1)
                 }
             },
@@ -174,8 +181,25 @@ fn main() -> ExitCode {
         TopCommand::Upgrade => match upgrade::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("Error: {err:#}");
+                eprintln!("{}: {err:#}", i18n::t("error.prefix"));
                 ExitCode::from(1)
+            }
+        },
+        TopCommand::Language { code } => match code {
+            Some(code) => match i18n::set(&code) {
+                Ok(lang) => {
+                    println!("{}", i18n::tr("language.set_ok", &[&lang]));
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("{}: {err:#}", i18n::t("error.prefix"));
+                    ExitCode::from(1)
+                }
+            },
+            None => {
+                println!("{}", i18n::tr("language.current", &[&i18n::current()]));
+                println!("{}", i18n::tr("language.available", &[&i18n::AVAILABLE.join(", ")]));
+                ExitCode::SUCCESS
             }
         },
     }
