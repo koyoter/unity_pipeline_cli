@@ -1,0 +1,4 @@
+# 补丁文件必须保持字节原样：patchkit 的 hunk header 解析不容忍 CRLF，
+# 而 Windows runner 默认 core.autocrlf=true 会把 checkout 出来的 .patch
+# 转成 CRLF，再被 build.rs 的 include_bytes! 原样嵌进执行文件导致解析失败。
+*.patch -text

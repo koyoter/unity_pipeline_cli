@@ -405,6 +405,7 @@ struct FilePatch {
 fn load_patch(source: &str, patch_path: &Path) -> Result<Vec<FilePatch>> {
     let raw = fs::read(patch_path)
         .with_context(|| tr("install.read_patch_failed", &[&source, &patch_path.display()]))?;
+    let raw = normalize_crlf(raw);
     let lines = splitlines(&raw).map(|l| l.to_vec());
     let mut out = Vec::new();
     for (idx, item) in parse_patches(lines).enumerate() {
@@ -455,6 +456,27 @@ fn load_patch(source: &str, patch_path: &Path) -> Result<Vec<FilePatch>> {
         return Err(anyhow!("{}", tr("install.no_text_hunks", &[&source])));
     }
     Ok(out)
+}
+
+/// 把补丁字节里的 `\r\n` 行尾归一成 `\n`。
+///
+/// patchkit 的 hunk header 正则要求 `@@` 后紧跟换行、内容匹配按字节精确进行，
+/// 都不容忍 `\r`；而 `.patch` 文件在 Windows checkout（core.autocrlf）或编辑器
+/// 保存下很容易整文件变 CRLF。包内被补丁的目标文件均为 LF，归一既修复 CRLF
+/// 补丁的解析失败，也不改变应用结果；不紧跟 `\n` 的 `\r` 原样保留。
+fn normalize_crlf(data: Vec<u8>) -> Vec<u8> {
+    if !data.contains(&b'\r') {
+        return data;
+    }
+    let mut out = Vec::with_capacity(data.len());
+    let mut iter = data.into_iter().peekable();
+    while let Some(b) = iter.next() {
+        if b == b'\r' && iter.peek() == Some(&b'\n') {
+            continue;
+        }
+        out.push(b);
+    }
+    out
 }
 
 /// Strip a leading `a/` or `b/` segment the way `git apply -p1` would.
@@ -845,6 +867,63 @@ fn parse_num_parts(s: &str) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `normalize_crlf` 只吃掉紧跟 `\n` 的 `\r`：整文件 CRLF 归一成 LF，孤立
+    /// 的 `\r`（内容本身的 CR）原样保留。
+    #[test]
+    fn normalize_crlf_strips_only_cr_before_lf() {
+        assert_eq!(normalize_crlf(b"a\r\nb\n".to_vec()), b"a\nb\n".to_vec());
+        assert_eq!(normalize_crlf(b"a\rb".to_vec()), b"a\rb".to_vec());
+        assert_eq!(normalize_crlf(b"a\n\r".to_vec()), b"a\n\r".to_vec());
+    }
+
+    /// 回归：CRLF 补丁里无 tail 的 hunk header（`@@ -1,2 +1,2 @@\r\n`）会让
+    /// patchkit 报 MalformedHunkHeader，load_patch 归一后必须可正常解析。
+    /// 夹具用 `\n` 转义拼接而非字面换行，避免测试源码被 autocrlf 转换后失真。
+    #[test]
+    fn load_patch_accepts_crlf_patch_file() {
+        let lf = concat!(
+            "diff --git a/Editor/Foo.cs b/Editor/Foo.cs\n",
+            "--- a/Editor/Foo.cs\n",
+            "+++ b/Editor/Foo.cs\n",
+            "@@ -1,2 +1,2 @@\n",
+            " one\n",
+            "-two\n",
+            "+TWO\n",
+        );
+        let tmp = std::env::temp_dir().join(format!(
+            "unity_pipeline_crlf_patch_test_{}.patch",
+            std::process::id()
+        ));
+        std::fs::write(&tmp, lf.replace('\n', "\r\n")).unwrap();
+        let patches = load_patch("custom/crlf.patch", &tmp).unwrap();
+        let _ = std::fs::remove_file(&tmp);
+        assert_eq!(patches.len(), 1);
+        assert_eq!(patches[0].rel_path, PathBuf::from("Editor").join("Foo.cs"));
+        assert_eq!(patches[0].hunks.len(), 1);
+        assert_eq!(patches[0].hunks[0].lines.len(), 3);
+    }
+
+    /// 所有内嵌补丁必须能被 load_patch 完整解析。守住「重新生成补丁时混入
+    /// CRLF 或坏段」这类回归，不依赖本机有无包缓存。
+    #[test]
+    fn embedded_patches_all_parse() {
+        assert!(!EMBEDDED_PATCHES.is_empty());
+        let tmp = std::env::temp_dir().join(format!(
+            "unity_pipeline_embedded_parse_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        for (set, name, bytes) in EMBEDDED_PATCHES {
+            let path = tmp.join(format!("{set}_{name}"));
+            std::fs::write(&path, bytes).unwrap();
+            let patches = load_patch(&format!("system/{set}/{name}"), &path)
+                .unwrap_or_else(|e| panic!("解析 {set}/{name} 失败：{e}"));
+            assert!(!patches.is_empty(), "{set}/{name} 没有可用的文本段");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     /// Verify the pure-Rust sha1 matches a known digest so regressions in the
     /// streaming buffer show up here rather than via a mismatched registry SHA.

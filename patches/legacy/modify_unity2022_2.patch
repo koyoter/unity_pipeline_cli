@@ -85,21 +85,3 @@ index 5b38385..953f880 100644
 +#endif
      }
  }
-diff --git a/Tests/Editor/PipelineAnalyticsTests.cs b/Tests/Editor/PipelineAnalyticsTests.cs
-index f2ec939..6b40b5d 100644
---- a/Tests/Editor/PipelineAnalyticsTests.cs
-+++ b/Tests/Editor/PipelineAnalyticsTests.cs
-@@ -15,6 +15,7 @@ using UnityEngine.TestTools;
- 
- namespace Unity.Pipeline.Tests.Editor
- {
-+#if ENABLE_ANALYTICS
-     /// <summary>
-     /// Tests for the analytics reporter and for the post-command info it is driven by.
-     ///
-@@ -456,4 +457,5 @@ namespace Unity.Pipeline.Tests.Editor
- 
-         #endregion
-     }
-+#endif
- }
