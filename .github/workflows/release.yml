@@ -78,24 +78,26 @@ jobs:
             cargo build --release --target "$t"
           done
 
-      # 资产名 unity_pipeline_cli-{版本}-{平台}.zip，平台段与 --version 输出的平台标签一致
+      # 资产名 unity_pipeline_cli-{版本}-{平台}.tar.gz，平台段与 --version 输出的平台标签一致。
+      # 统一用 tar.gz 而非 zip：系统自带的 tar（Windows 的 bsdtar / macOS 的 bsdtar，
+      # 甚至 Git Bash 的 GNU tar）都能解，`upgrade` 自更新时无需关心用户 PATH 里有哪种 tar。
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
           for t in ${{ matrix.targets }}; do
             if [[ "$t" == *windows* ]]; then
-              powershell -NoProfile -Command "Compress-Archive -Path 'target/$t/release/${BIN}.exe' -DestinationPath 'dist/${BIN}-${VERSION}-windows-x86_64.zip' -Force"
+              tar -czf "dist/${BIN}-${VERSION}-windows-x86_64.tar.gz" -C "target/$t/release" "${BIN}.exe"
             else
               if [[ "$t" == aarch64* ]]; then arch=arm64; else arch=x86_64; fi
-              zip -j "dist/${BIN}-${VERSION}-macos-${arch}.zip" "target/$t/release/${BIN}"
+              tar -czf "dist/${BIN}-${VERSION}-macos-${arch}.tar.gz" -C "target/$t/release" "${BIN}"
             fi
           done
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             lipo -create -output "${BIN}" \
               "target/x86_64-apple-darwin/release/${BIN}" \
               "target/aarch64-apple-darwin/release/${BIN}"
-            zip -j "dist/${BIN}-${VERSION}-macos-universal.zip" "${BIN}"
+            tar -czf "dist/${BIN}-${VERSION}-macos-universal.tar.gz" "${BIN}"
           fi
           ls -l dist
 

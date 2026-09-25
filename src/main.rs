@@ -12,9 +12,10 @@ mod mcp;
 mod pipeline;
 mod process;
 mod projects;
+mod upgrade;
 
 /// --version 输出的完整版本串：`{semver} {平台标签}`。
-/// 平台标签与 Release 资产名的平台段一致（unity_pipeline_cli-{版本}-{平台}.zip），
+/// 平台标签与 Release 资产名的平台段一致（unity_pipeline_cli-{版本}-{平台}.tar.gz），
 /// 按平台下载时取 --version 最后一个空格后的 token 即可拼出资产文件名。
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 const VERSION_STR: &str = concat!(env!("CARGO_PKG_VERSION"), " windows-x86_64");
@@ -84,6 +85,8 @@ enum TopCommand {
         #[command(subcommand)]
         target: ConfigureTarget,
     },
+    /// Check the latest GitHub release, confirm, then download and replace this binary.
+    Upgrade,
 }
 
 #[derive(Subcommand)]
@@ -167,6 +170,13 @@ fn main() -> ExitCode {
                     ExitCode::from(1)
                 }
             },
+        },
+        TopCommand::Upgrade => match upgrade::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("Error: {err:#}");
+                ExitCode::from(1)
+            }
         },
     }
 }

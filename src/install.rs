@@ -644,13 +644,14 @@ fn tarball_file_name(url: &str, version: &str) -> String {
         .unwrap_or_else(|| format!("{PACKAGE_ID}-{version}.tgz"))
 }
 
-fn download(url: &str, dest: &Path) -> Result<()> {
+pub(crate) fn download(url: &str, dest: &Path) -> Result<()> {
     let dest_str = dest
         .to_str()
         .ok_or_else(|| anyhow!("目标路径包含非 UTF-8 字符：{}", dest.display()))?;
     let status = Command::new("curl")
         .args([
             "-fSL",
+            "--progress-bar",
             "--retry",
             "3",
             "--retry-delay",
@@ -671,7 +672,7 @@ fn download(url: &str, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn extract_tarball(tarball: &Path, dest: &Path) -> Result<()> {
+pub(crate) fn extract_tarball(tarball: &Path, dest: &Path) -> Result<()> {
     let tarball_str = tarball
         .to_str()
         .ok_or_else(|| anyhow!("tarball 路径包含非 UTF-8 字符：{}", tarball.display()))?;
@@ -689,7 +690,7 @@ fn extract_tarball(tarball: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn http_get_text(url: &str) -> Result<String> {
+pub(crate) fn http_get_text(url: &str) -> Result<String> {
     let output = Command::new("curl")
         .args(["-fsSL", url])
         .stdin(Stdio::null())

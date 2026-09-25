@@ -22,16 +22,9 @@ This project is a streamlined, optimized take on the **Pipeline-package interact
 
 ### Getting the binary
 
-Download the zip for your platform from [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) and unzip it — a single self-contained binary, no installation; the macOS zips keep the executable bit, so no `chmod +x` needed.
+Download the archive for your platform from [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) (filenames carry the platform tag; if unsure about your Mac's architecture, pick universal) and extract it — a single self-contained binary, no installation.
 
-| Platform | Download (v0.1.2) |
-| :-- | :-- |
-| Windows x64 | [unity_pipeline_cli-0.1.2-windows-x86_64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-windows-x86_64.zip) |
-| macOS Apple Silicon | [unity_pipeline_cli-0.1.2-macos-arm64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-arm64.zip) |
-| macOS Intel | [unity_pipeline_cli-0.1.2-macos-x86_64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-x86_64.zip) |
-| macOS universal | [unity_pipeline_cli-0.1.2-macos-universal.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-universal.zip) |
-
-> Not sure which Mac arch? Pick universal. After a new release, grab the fresh links from the [Releases page](https://github.com/koyoter/unity_pipeline_cli/releases/latest) and update this table.
+Already have an older build? Run `unity upgrade` to self-update — no manual download needed (see the [command reference](#command-reference)).
 
 Building yourself: `cargo build --release`, or the root scripts (`build-release.bat` / `./build-release.sh universal`).
 
@@ -60,6 +53,10 @@ Interactively pick a running Editor and a package version, then it automatically
 ### `projects` — inspect running Editors
 
 Lists project name, PID, Unity version, installed Pipeline package version, server port and reachability. `--json` emits machine-readable JSON.
+
+### `upgrade` — self-update
+
+Automatically checks GitHub for a new version: when one exists, it shows the release notes and, after your confirmation, downloads (with a progress bar) and replaces the running binary — no manual download needed.
 
 ### `command` — list / execute pipeline commands
 

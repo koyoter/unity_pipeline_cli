@@ -22,16 +22,9 @@
 
 ### 获取
 
-从 [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) 下载对应平台的 zip，解压即用——单文件、免安装；macOS 的 zip 保留可执行权限，无需 `chmod +x`。
+从 [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) 下载对应平台的压缩包（文件名含平台标识，拿不准 Mac 架构就选 universal），解压即用——单文件、免安装。
 
-| 平台 | 下载（v0.1.2） |
-| :-- | :-- |
-| Windows x64 | [unity_pipeline_cli-0.1.2-windows-x86_64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-windows-x86_64.zip) |
-| macOS Apple Silicon | [unity_pipeline_cli-0.1.2-macos-arm64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-arm64.zip) |
-| macOS Intel | [unity_pipeline_cli-0.1.2-macos-x86_64.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-x86_64.zip) |
-| macOS 双架构通用 | [unity_pipeline_cli-0.1.2-macos-universal.zip](https://github.com/koyoter/unity_pipeline_cli/releases/download/v0.1.2/unity_pipeline_cli-0.1.2-macos-universal.zip) |
-
-> 拿不准 Mac 架构就选 universal；发新版本后到 [Releases 页面](https://github.com/koyoter/unity_pipeline_cli/releases/latest)取最新直链并更新本表。
+已装了旧版本？直接 `unity upgrade` 自更新，无需手动下载（详见[命令参考](#命令参考)）。
 
 自行编译：`cargo build --release`，或用根目录脚本（`build-release.bat` / `./build-release.sh universal`）。
 
@@ -60,6 +53,10 @@ unity_pipeline_cli install
 ### `projects` — 查看运行中的 Editor
 
 列出项目名、PID、Unity 版本、Pipeline 包版本、服务端口与可达性。`--json` 输出机器可读 JSON。
+
+### `upgrade` — 自更新
+
+自动检测 GitHub 上的新版本：有更新时展示更新内容，确认后自动下载（带进度条）并替换当前程序，无需手动下载安装。
 
 ### `command` — 列出 / 执行管线指令
 
