@@ -6,6 +6,8 @@
 
 This project is a streamlined, optimized take on the **Pipeline-package interaction** slice of the official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli): the official CLI installs Editors and creates projects, while controlling the Editor itself requires the separate `com.unity.pipeline` package — this tool packs that slice into a single Rust binary with no heavyweight dependencies (Windows 10+ / macOS, Intel and Apple Silicon).
 
+**The goal is to support Unity versions beyond the official Unity CLI**: the upstream `com.unity.pipeline` package does not work out of the box on older Editors; built-in patches bridge the gap, and **Unity 2022.3** is already stably supported.
+
 ## Core capabilities
 
 - 🤖 **AI bridging (MCP, the headline)**: every pipeline command registered inside the Editor is automatically exposed as an MCP tool (with a JSON Schema description of its parameters). Dropped connections are re-established automatically, busy Editors are retried, `recompile` only returns once compilation finishes, screenshots come back as images, and Bearer tokens are redacted everywhere.
@@ -131,4 +133,4 @@ build-release.bat                  # Windows: one-shot build into releases/
 
 ### Relation to the official Unity CLI
 
-The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) covers Editor installation, project creation, version-control setup, and more; controlling the Editor itself requires the separate `com.unity.pipeline` package. This project does — and enhances — exactly that slice (patched one-shot install, instance discovery, command execution, MCP bridging); it does not install Editors, create projects, or integrate Unity accounts / Cloud.
+The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) covers Editor installation, project creation, version-control setup, and more; controlling the Editor itself requires the separate `com.unity.pipeline` package. This project does — and enhances — exactly that slice (patched one-shot install, instance discovery, command execution, MCP bridging); it does not install Editors, create projects, or integrate Unity accounts / Cloud. Version coverage aims beyond the official CLI: built-in patches make the upstream package run on Editors it does not support out of the box — **Unity 2022.3** is already stably supported.

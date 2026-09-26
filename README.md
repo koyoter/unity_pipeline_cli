@@ -6,6 +6,8 @@
 
 本工程是官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 中 **Pipeline 包交互环节**的精简优化版：官方 CLI 负责安装编辑器、创建项目，而控制 Editor 本身需要单独的 `com.unity.pipeline` 包——本工具把这一环做成一个零重依赖的 Rust 单二进制（Windows 10+ / macOS，Intel 与 Apple Silicon）。
 
+**以支持官方 Unity CLI 之外的 Unity 版本为目标**：上游 `com.unity.pipeline` 包在旧版 Editor 上开箱不可用，本工具以内置补丁打通，目前已稳定支持 **Unity 2022.3**。
+
 ## 核心能力
 
 - 🤖 **AI 桥接（MCP，主打）**：Editor 内注册的每条管线指令自动暴露为 MCP 工具（含 JSON Schema 参数描述）。连接失效自动重连、Editor 忙碌自动重试、`recompile` 等到编译结束才返回、截图直接以图片回传、Bearer Token 全程脱敏。
@@ -131,4 +133,4 @@ build-release.bat                  # Windows 一键产出 releases/
 
 ### 与官方 Unity CLI 的关系
 
-官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责编辑器安装、项目创建、版本控制接入等；控制 Editor 本身需另装 `com.unity.pipeline` 包。本工程只做并增强这一环（带补丁的一键安装、实例发现、指令执行、MCP 桥接）；不包含编辑器安装、项目创建、Unity 账号 / Cloud 集成。
+官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责编辑器安装、项目创建、版本控制接入等；控制 Editor 本身需另装 `com.unity.pipeline` 包。本工程只做并增强这一环（带补丁的一键安装、实例发现、指令执行、MCP 桥接）；不包含编辑器安装、项目创建、Unity 账号 / Cloud 集成。版本覆盖以官方 CLI 之外为目标：内置补丁让上游包跑在它开箱不支持的 Editor 上，目前已稳定支持 **Unity 2022.3**。
