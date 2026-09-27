@@ -1,0 +1,76 @@
+diff --git a/Editor/Console/EditorConsoleGroundTruth.cs b/Editor/Console/EditorConsoleGroundTruth.cs
+index 864c432..6aff280 100644
+--- a/Editor/Console/EditorConsoleGroundTruth.cs
++++ b/Editor/Console/EditorConsoleGroundTruth.cs
+@@ -1,5 +1,8 @@
+ using System;
+ using System.Collections.Generic;
++#if UNITY_2022_3
++using System.Reflection;
++#endif
+ using Unity.Pipeline.Console;
+ using Unity.Pipeline.Models;
+ using UnityEditor;
+@@ -49,8 +52,10 @@ namespace Unity.Pipeline.Editor.Console
+             EditorApplication.update -= Sample;
+             EditorApplication.update += Sample;
+ 
++#if !UNITY_2022_3
+             ConsoleWindowUtility.consoleLogsChanged -= OnConsoleLogsChanged;
+             ConsoleWindowUtility.consoleLogsChanged += OnConsoleLogsChanged;
++#endif
+ 
+             AssemblyReloadEvents.afterAssemblyReload -= OnAfterAssemblyReload;
+             AssemblyReloadEvents.afterAssemblyReload += OnAfterAssemblyReload;
+@@ -67,7 +72,11 @@ namespace Unity.Pipeline.Editor.Console
+             if (!s_Seeded)
+                 TrySeed();
+ 
++#if UNITY_2022_3
++            GetConsoleLogCounts(out var errors, out var warnings, out var logs);
++#else
+             ConsoleWindowUtility.GetConsoleLogCounts(out var errors, out var warnings, out var logs);
++#endif
+             var total = errors + warnings + logs;
+             var seq = ConsoleLogCapture.Buffer.LastSeq;
+ 
+@@ -118,6 +127,39 @@ namespace Unity.Pipeline.Editor.Console
+             };
+         }
+ 
++#if UNITY_2022_3
++        // ConsoleWindowUtility does not exist on 2022.3. GetCountsByType is the same native counter
++        // the public API wraps, read through the internal LogEntries the way EditorConsoleEntries
++        // reads it. A failed binding or invocation leaves the counts at zero, which only turns the
++        // dead-callback gap detection into a no-op; the snapshot itself stays valid.
++        static readonly MethodInfo s_GetCountsByType =
++            Type.GetType("UnityEditor.LogEntries,UnityEditor")
++                ?.GetMethod("GetCountsByType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
++
++        static void GetConsoleLogCounts(out int errors, out int warnings, out int logs)
++        {
++            errors = 0;
++            warnings = 0;
++            logs = 0;
++            if (s_GetCountsByType == null)
++                return;
++
++            var args = new object[] { 0, 0, 0 };
++            try
++            {
++                s_GetCountsByType.Invoke(null, args);
++            }
++            catch (Exception)
++            {
++                return;
++            }
++
++            errors = (int)args[0];
++            warnings = (int)args[1];
++            logs = (int)args[2];
++        }
++#endif
++
+         // Only shortens the wait for the next sample; never a correctness dependency, since it is
+         // not raised while the Console window is closed.
+         static void OnConsoleLogsChanged() => s_NextSampleTime = 0;

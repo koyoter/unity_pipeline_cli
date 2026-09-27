@@ -12,7 +12,12 @@ use std::path::PathBuf;
 /// .meta 全部加了 `UnityPipeline.` 前缀（RenameAsm 改写，避免与编辑器自带副本
 /// 冲突），.meta 旧状态与旧版本不再互相匹配，故按包版本拆分补丁集；后续出现
 /// 不兼容漂移时照此办理——新增一个集合目录 + 在此追加一行规则。
-const PATCH_SET_RULES: &[(&str, &str)] = &[("v0.7", "0.7.0-exp.1")];
+///
+/// 0.8.0-exp.1 起上游重新保存了其中两个 .meta（CSharp / Microsoft.CodeAnalysis，
+/// platformData 由 `Any: enabled:1 + Exclude*` 布局变为 `Any: enabled:0 + 每平台
+/// CPU 条目`，defineConstraints 换用 ENABLE_PROFILER），v0.7 的 hunk 上下文失配，
+/// 故拆出 v0.8（打丁后 platformData 目标状态与 v0.7 相同）。
+const PATCH_SET_RULES: &[(&str, &str)] = &[("v0.7", "0.7.0-exp.1"), ("v0.8", "0.8.0-exp.1")];
 
 /// 没有任何规则命中时使用的补丁集（最老的集合）。
 const DEFAULT_PATCH_SET: &str = "legacy";

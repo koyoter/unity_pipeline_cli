@@ -119,7 +119,7 @@ Without a pinned project: with exactly one reachable Editor it connects automati
 
 ### Patch mechanism
 
-- Built-in patches are embedded into the exe at compile time (`build.rs`), split by package version: `< 0.7.0-exp.1` → `legacy`, `≥ 0.7.0-exp.1` → `v0.7`; installation dry-runs them first and only applies on success
+- Built-in patches are embedded into the exe at compile time (`build.rs`), split by package version: `< 0.7.0-exp.1` → `legacy`, `≥ 0.7.0-exp.1` → `v0.7`, `≥ 0.8.0-exp.1` → `v0.8`; installation dry-runs them first and only applies on success
 - Custom patches live in `patchs/custom/` under the working directory, named `modify_unity_local_1.patch`, `modify_unity_local_2.patch`, …, applied in ascending order after the built-ins
 - `patchs/system/` is an auto-generated mirror of the embedded patches, rebuilt on every install — do not edit
 

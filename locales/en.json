@@ -84,7 +84,7 @@
   "install.parse_package_json_failed": "Failed to parse {0}",
   "install.parse_package_version_failed": "Failed to parse package version `{0}`",
   "install.patches_applied": "✅ Patches applied",
-  "install.patchs_readme": "# About the patchs directory\n\n- `system/<patch set>/`: generated automatically, mirroring the patches embedded in the exe grouped by package version (e.g. `legacy/`, `v0.7/`). Rebuilt on every install — do not modify; only the set matching the package version is applied during install.\n- `custom/`: put custom patches here, named `modify_unity_local_1.patch`, `modify_unity_local_2.patch`, … They are applied in ascending numeric order after the built-in patches; .patch files with other names are skipped.",
+  "install.patchs_readme": "# About the patchs directory\n\n- `system/<patch set>/`: generated automatically, mirroring the patches embedded in the exe grouped by package version (e.g. `legacy/`, `v0.7/`, `v0.8/`). Rebuilt on every install — do not modify; only the set matching the package version is applied during install.\n- `custom/`: put custom patches here, named `modify_unity_local_1.patch`, `modify_unity_local_2.patch`, … They are applied in ascending numeric order after the built-in patches; .patch files with other names are skipped.",
   "install.pick_project_default": "➡️  Using default 1: {0}",
   "install.pick_project_header": "\n📋 Available projects ({0}):\n",
   "install.pick_project_prompt": "Select the target project [1-{0}, Enter for default 1, 0 to skip]: ",

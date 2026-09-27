@@ -84,7 +84,7 @@
   "install.parse_package_json_failed": "解析 {0} 失败",
   "install.parse_package_version_failed": "解析包版本 `{0}` 失败",
   "install.patches_applied": "✅ patch 已应用",
-  "install.patchs_readme": "# patchs 目录说明\n\n- `system/<补丁集>/`：程序自动生成，按包版本分集镜像 exe 内置 patch（如 `legacy/`、`v0.7/`），每次安装时重建，请勿修改；安装时只应用与包版本匹配的那个集合。\n- `custom/`：自定义 patch 放这里，命名 `modify_unity_local_1.patch`、`modify_unity_local_2.patch`……按编号升序在内置 patch 之后依次应用，其他命名的 .patch 文件会被跳过。",
+  "install.patchs_readme": "# patchs 目录说明\n\n- `system/<补丁集>/`：程序自动生成，按包版本分集镜像 exe 内置 patch（如 `legacy/`、`v0.7/`、`v0.8/`），每次安装时重建，请勿修改；安装时只应用与包版本匹配的那个集合。\n- `custom/`：自定义 patch 放这里，命名 `modify_unity_local_1.patch`、`modify_unity_local_2.patch`……按编号升序在内置 patch 之后依次应用，其他命名的 .patch 文件会被跳过。",
   "install.pick_project_default": "➡️  默认选择 1：{0}",
   "install.pick_project_header": "\n📋 可选项目（{0}）：\n",
   "install.pick_project_prompt": "请选择目标项目 [1-{0}, 回车默认 1，0 跳过]：",

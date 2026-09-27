@@ -987,7 +987,9 @@ mod tests {
         assert_eq!(select_patch_set("0.7.0-exp.0").unwrap(), "legacy");
         assert_eq!(select_patch_set("0.7.0-exp.1").unwrap(), "v0.7");
         assert_eq!(select_patch_set("0.7.0").unwrap(), "v0.7");
-        assert_eq!(select_patch_set("0.8.0").unwrap(), "v0.7");
+        assert_eq!(select_patch_set("0.8.0-exp.0").unwrap(), "v0.7");
+        assert_eq!(select_patch_set("0.8.0-exp.1").unwrap(), "v0.8");
+        assert_eq!(select_patch_set("0.8.0").unwrap(), "v0.8");
     }
 
     /// Unparseable package versions abort instead of guessing a patch set.
@@ -1091,9 +1093,9 @@ mod tests {
                         .expect("load_patch 应成功"),
                 );
             }
-            // 每个集合都是 modify_unity2022_1.patch 贡献 9 段 + patch 2 贡献 2 段
-            // + patch 3 贡献 1 段。
-            assert_eq!(patches.len(), 12, "预期 12 段 file-patch");
+            // 每个集合都是 modify_unity2022_1.patch 贡献 7 段（2 个 .cs + 5 个
+            // CodeAnalysis .meta）+ patch 2、3 各贡献 1 段。
+            assert_eq!(patches.len(), 9, "预期 9 段 file-patch");
 
             dry_run_patches(&patches, &dest).expect("dry_run 应通过");
             apply_patches(&patches, &dest).expect("apply 应成功");
@@ -1106,12 +1108,12 @@ mod tests {
                 cs.contains("UNITY_2022_3"),
                 "patch 后的文件应包含 UNITY_2022_3 宏"
             );
-            // Sanity (v0.7 set): serializedVersion downgraded, and the
+            // Sanity (v0.7+ sets): serializedVersion downgraded, and the
             // Unsafe .meta's platformData block must be byte-identical to
             // CSharp's (Editor-only). Guards against malformed block
             // reconstruction — a missing `settings:` line once made Unity
             // uncheck every platform for the Unsafe plugin.
-            if patch_set == "v0.7" {
+            if patch_set == "v0.7" || patch_set == "v0.8" {
                 let meta_dir = dest.join("Runtime/Plugins/CodeAnalysis");
                 let platform_block = |name: &str| -> Vec<String> {
                     let text =
