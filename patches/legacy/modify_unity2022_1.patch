@@ -405,6 +405,15 @@ diff --git a/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta b/
 index 1bb2081..cf70ac3 100644
 --- a/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta
 +++ b/Runtime/Plugins/CodeAnalysis/System.Reflection.Metadata.dll.meta
+@@ -2,7 +2,7 @@ fileFormatVersion: 2
+ guid: 7e46a81867cf8f24a859c42b98fe7138
+ PluginImporter:
+   externalObjects: {}
+-  serializedVersion: 3
++  serializedVersion: 2
+   iconMap: {}
+   executionOrder: {}
+   defineConstraints: []
 @@ -11,40 +11,77 @@ PluginImporter:
    isExplicitlyReferenced: 0
    validateReferences: 1

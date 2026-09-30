@@ -395,6 +395,15 @@ diff --git a/Runtime/Plugins/CodeAnalysis/UnityPipeline.System.Reflection.Metada
 index f5016ab..bace413 100644
 --- a/Runtime/Plugins/CodeAnalysis/UnityPipeline.System.Reflection.Metadata.dll.meta
 +++ b/Runtime/Plugins/CodeAnalysis/UnityPipeline.System.Reflection.Metadata.dll.meta
+@@ -2,7 +2,7 @@ fileFormatVersion: 2
+ guid: bfb1ff29d529b904b8f210e2a1b4b8ce
+ PluginImporter:
+   externalObjects: {}
+-  serializedVersion: 3
++  serializedVersion: 2
+   iconMap: {}
+   executionOrder: {}
+   defineConstraints:
 @@ -12,40 +12,77 @@ PluginImporter:
    isExplicitlyReferenced: 0
    validateReferences: 1
