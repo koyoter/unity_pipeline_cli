@@ -1,0 +1,43 @@
+{
+  "legacy": {
+    "from": "0.0.0",
+    "patches": [
+      "Editor.Commands.Assets.AssetCommands.cs@1.patch",
+      "Editor.Commands.Materials.MaterialCommands.cs@1.patch",
+      "Runtime.Plugins.CodeAnalysis.Microsoft.CodeAnalysis.CSharp.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.Microsoft.CodeAnalysis.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.System.Collections.Immutable.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.System.Reflection.Metadata.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.System.Runtime.CompilerServices.Unsafe.dll.meta@1.patch",
+      "Editor.PipelineAnalytics.cs@1.patch"
+    ]
+  },
+  "0.7": {
+    "from": "0.7.0-exp.1",
+    "patches": [
+      "Editor.Commands.Assets.AssetCommands.cs@1.patch",
+      "Editor.Commands.Materials.MaterialCommands.cs@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.Microsoft.CodeAnalysis.CSharp.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.Microsoft.CodeAnalysis.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Collections.Immutable.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Reflection.Metadata.dll.meta@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Runtime.CompilerServices.Unsafe.dll.meta@1.patch",
+      "Editor.PipelineAnalytics.cs@2.patch",
+      "Editor.Console.EditorConsoleGroundTruth.cs@1.patch"
+    ]
+  },
+  "0.8": {
+    "from": "0.8.0-exp.1",
+    "patches": [
+      "Editor.Commands.Assets.AssetCommands.cs@1.patch",
+      "Editor.Commands.Materials.MaterialCommands.cs@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.Microsoft.CodeAnalysis.CSharp.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.Microsoft.CodeAnalysis.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Collections.Immutable.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Reflection.Metadata.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Runtime.CompilerServices.Unsafe.dll.meta@2.patch",
+      "Editor.PipelineAnalytics.cs@2.patch",
+      "Editor.Console.EditorConsoleGroundTruth.cs@1.patch"
+    ]
+  }
+}

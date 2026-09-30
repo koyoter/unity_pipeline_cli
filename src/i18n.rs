@@ -142,23 +142,5 @@ fn config_dir() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn locales_share_the_same_key_set() {
-        let tb = tables();
-        let mut en: Vec<_> = tb.en.keys().collect();
-        let mut zh: Vec<_> = tb.zh.keys().collect();
-        en.sort_unstable();
-        zh.sort_unstable();
-        assert_eq!(en, zh, "en/zh 键集合不一致");
-    }
-
-    #[test]
-    fn placeholders_are_substituted() {
-        let out = tr("language.invalid", &[&"xx", &"en, zh"]);
-        assert!(!out.contains('{'), "占位符未替换: {out}");
-        assert!(out.contains("xx"));
-    }
-}
+#[path = "../tests/i18n.rs"]
+mod tests;

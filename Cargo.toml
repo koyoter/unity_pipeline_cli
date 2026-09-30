@@ -2,6 +2,10 @@
 name = "unity_pipeline_cli"
 version = "0.1.4"
 edition = "2021"
+# 单元测试放在 tests/{install,i18n,upgrade}.rs，由 src/ 里对应的
+# #[path] 声明挂载为子模块（见各测试文件头注释）；关掉自动发现，
+# 避免cargo 把这些文件当独立集成测试 crate 编译。
+autotests = false
 
 [[bin]]
 name = "unity_pipeline_cli"
@@ -16,6 +20,10 @@ anyhow = "1"
 patchkit = "0.3"
 sha1 = "0.10"
 semver = "1"
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.release]
 opt-level = "z"

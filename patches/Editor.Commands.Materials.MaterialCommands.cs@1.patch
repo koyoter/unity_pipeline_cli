@@ -1,0 +1,16 @@
+diff --git a/Editor/Commands/Materials/MaterialCommands.cs b/Editor/Commands/Materials/MaterialCommands.cs
+index 45acc94..1bdae04 100644
+--- a/Editor/Commands/Materials/MaterialCommands.cs
++++ b/Editor/Commands/Materials/MaterialCommands.cs
+@@ -45,7 +45,11 @@ namespace Unity.Pipeline.Editor.Commands.Materials
+                 // rawRenderQueue is -1 when the material inherits from the shader and a positive
+                 // integer when explicitly overridden — returning the raw value preserves the
+                 // round-trip contract with set_material_properties renderQueue:-1 (inherit).
++#if UNITY_2022_3
++                RenderQueue = mat.renderQueue,
++#else
+                 RenderQueue = mat.rawRenderQueue,
++#endif
+                 EnabledKeywords = GetEnabledKeywords(mat),
+             };
+ 

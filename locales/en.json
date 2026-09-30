@@ -44,7 +44,6 @@
   "install.create_dir_failed": "Failed to create the directory: {0}",
   "install.create_downloads_dir_failed": "Failed to create the downloads directory: {0}",
   "install.create_extract_dir_failed": "Failed to create the extraction directory: {0}",
-  "install.create_patch_set_dir_failed": "Failed to create the system patch-set directory: {0}",
   "install.create_system_dir_failed": "Failed to create the system patch directory: {0}",
   "install.curl_download_failed": "curl download failed (exit code = {0})",
   "install.curl_request_failed": "curl request to {0} failed (exit = {1}): {2}",
@@ -84,7 +83,7 @@
   "install.parse_package_json_failed": "Failed to parse {0}",
   "install.parse_package_version_failed": "Failed to parse package version `{0}`",
   "install.patches_applied": "✅ Patches applied",
-  "install.patchs_readme": "# About the patchs directory\n\n- `system/<patch set>/`: generated automatically, mirroring the patches embedded in the exe grouped by package version (e.g. `legacy/`, `v0.7/`, `v0.8/`). Rebuilt on every install — do not modify; only the set matching the package version is applied during install.\n- `custom/`: put custom patches here, named `modify_unity_local_1.patch`, `modify_unity_local_2.patch`, … They are applied in ascending numeric order after the built-in patches; .patch files with other names are skipped.",
+  "install.patchs_readme": "# About the patchs directory\n\n- `system/`: generated automatically, mirroring the built-in patches for the patch set matching the package version (one patch file per upstream target file, applied in the manifest's listed order). Rebuilt on every install — do not modify.\n- `custom/`: put custom patches here, named `modify_unity_local_1.patch`, `modify_unity_local_2.patch`, … They are applied in ascending numeric order after the built-in patches; .patch files with other names are skipped.",
   "install.pick_project_default": "➡️  Using default 1: {0}",
   "install.pick_project_header": "\n📋 Available projects ({0}):\n",
   "install.pick_project_prompt": "Select the target project [1-{0}, Enter for default 1, 0 to skip]: ",
@@ -95,7 +94,6 @@
   "install.read_package_json_failed": "Failed to read {0} (cannot determine the package version; patch-set selection aborted)",
   "install.read_patch_failed": "Failed to read patch ({0}): {1}",
   "install.read_sha1_file_failed": "Failed to read the SHA1 target file: {0}",
-  "install.read_system_dir_failed": "Failed to read the system/{0} patch directory: {1}",
   "install.read_target_failed": "Failed to read the target file: {0}",
   "install.read_target_failed_with_patch_path": "Failed to read the target file (patch path `{0}`): {1}",
   "install.registry_not_utf8": "The registry response is not valid UTF-8",
@@ -118,7 +116,7 @@
   "install.version_not_found": "Version {0} does not exist in the registry",
   "install.version_not_found_with_available": "Version {0} does not exist in the registry; available versions: {1}",
   "install.version_patch_set": "🧩 Package version {0} → patch set {1}",
-  "install.write_embedded_patch_failed": "Failed to write embedded patch: {0}/{1}",
+  "install.write_embedded_patch_failed": "Failed to write embedded patch: {0}",
   "install.write_patched_file_failed": "Failed to write back the patched file: {0}",
   "install.write_readme_failed": "Failed to write README: {0}",
   "language.available": "Available languages: {0}",
@@ -165,5 +163,8 @@
   "upgrade.set_exec_permission_failed": "Failed to set executable permission: {0}",
   "upgrade.unknown_exe_dir": "Cannot determine the current executable's directory",
   "upgrade.unknown_exe_name": "Cannot determine the current executable's file name",
-  "upgrade.updated": "🎉 Updated to {0}. Run `unity --version` again to confirm."
+  "upgrade.updated": "🎉 Updated to {0}. Run `unity --version` again to confirm.",
+  "install.parse_manifest_failed": "Failed to parse the embedded patch manifest (patches/manifest.json)",
+  "install.manifest_patch_missing": "Patch `{0}` is listed in the manifest but not embedded in the exe",
+  "install.no_patch_set_rule": "No patch set in the manifest matches package version {0}"
 }

@@ -1,0 +1,57 @@
+diff --git a/Editor/Commands/Assets/AssetCommands.cs b/Editor/Commands/Assets/AssetCommands.cs
+index 1b59ae9..23c938d 100644
+--- a/Editor/Commands/Assets/AssetCommands.cs
++++ b/Editor/Commands/Assets/AssetCommands.cs
+@@ -53,7 +53,12 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+             // extension is still ".physicMaterial". AssetDatabase.CreateAsset rejects a
+             // ".physicsMaterial" file ("should not be used to create a file of type 'physicsMaterial'"),
+             // so accept either spelling from the agent and normalize to the extension Unity writes.
++#if UNITY_2022_3
++            if (typeof(PhysicMaterial).IsAssignableFrom(resolvedType) &&
++#else
+             if (typeof(PhysicsMaterial).IsAssignableFrom(resolvedType) &&
++#endif
++            
+                 normalized.EndsWith(".physicsMaterial", StringComparison.OrdinalIgnoreCase))
+             {
+                 normalized = normalized.Substring(0, normalized.Length - ".physicsMaterial".Length) + ".physicMaterial";
+@@ -87,6 +92,19 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+                 // every other type.
+                 asset = new Material(materialShader);
+             }
++#if UNITY_2022_3
++            else if (typeof(PhysicMaterial).IsAssignableFrom(resolvedType))
++            {
++                // CLI-222: PhysicsMaterial has a public parameterless ctor, but create it explicitly so
++                // we can stamp the documented sensible defaults rather than relying on engine defaults.
++                asset = new PhysicMaterial
++                {
++                    dynamicFriction = 0.6f,
++                    staticFriction = 0.6f,
++                    bounciness = 0f,
++                };
++            }
++#else
+             else if (typeof(PhysicsMaterial).IsAssignableFrom(resolvedType))
+             {
+                 // CLI-222: PhysicsMaterial has a public parameterless ctor, but create it explicitly so
+@@ -98,6 +116,7 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+                     bounciness = 0f,
+                 };
+             }
++#endif
+             else
+             {
+                 // Other UnityEngine.Object subclasses with a public parameterless ctor.
+@@ -542,7 +561,11 @@ namespace Unity.Pipeline.Editor.Commands.Assets
+             if (typeName == "PhysicsMaterial" || typeName == "PhysicMaterial"
+                 || typeName == "UnityEngine.PhysicsMaterial" || typeName == "UnityEngine.PhysicMaterial")
+             {
++#if UNITY_2022_3
++                return typeof(PhysicMaterial);
++#else
+                 return typeof(PhysicsMaterial);
++#endif
+             }
+ 
+             var direct = Type.GetType(typeName, throwOnError: false);

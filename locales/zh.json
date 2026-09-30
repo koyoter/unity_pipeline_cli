@@ -44,7 +44,6 @@
   "install.create_dir_failed": "创建目录失败：{0}",
   "install.create_downloads_dir_failed": "创建 downloads 目录失败：{0}",
   "install.create_extract_dir_failed": "创建解压目录失败：{0}",
-  "install.create_patch_set_dir_failed": "创建 system 补丁集目录失败：{0}",
   "install.create_system_dir_failed": "创建 system patch 目录失败：{0}",
   "install.curl_download_failed": "curl 下载失败（exit code = {0}）",
   "install.curl_request_failed": "curl 请求 {0} 失败（exit = {1}）：{2}",
@@ -84,7 +83,7 @@
   "install.parse_package_json_failed": "解析 {0} 失败",
   "install.parse_package_version_failed": "解析包版本 `{0}` 失败",
   "install.patches_applied": "✅ patch 已应用",
-  "install.patchs_readme": "# patchs 目录说明\n\n- `system/<补丁集>/`：程序自动生成，按包版本分集镜像 exe 内置 patch（如 `legacy/`、`v0.7/`、`v0.8/`），每次安装时重建，请勿修改；安装时只应用与包版本匹配的那个集合。\n- `custom/`：自定义 patch 放这里，命名 `modify_unity_local_1.patch`、`modify_unity_local_2.patch`……按编号升序在内置 patch 之后依次应用，其他命名的 .patch 文件会被跳过。",
+  "install.patchs_readme": "# patchs 目录说明\n\n- `system/`：程序自动生成，镜像 exe 内置的、与包版本匹配的那个补丁集（一个上游目标文件一个补丁文件，按 manifest 清单顺序应用）。每次安装时重建，请勿修改。\n- `custom/`：自定义 patch 放这里，命名 `modify_unity_local_1.patch`、`modify_unity_local_2.patch`……按编号升序在内置 patch 之后依次应用，其他命名的 .patch 文件会被跳过。",
   "install.pick_project_default": "➡️  默认选择 1：{0}",
   "install.pick_project_header": "\n📋 可选项目（{0}）：\n",
   "install.pick_project_prompt": "请选择目标项目 [1-{0}, 回车默认 1，0 跳过]：",
@@ -95,7 +94,6 @@
   "install.read_package_json_failed": "读取 {0} 失败（无法确定包版本，补丁集选择中止）",
   "install.read_patch_failed": "读取 patch 失败（{0}）：{1}",
   "install.read_sha1_file_failed": "读取 SHA1 目标文件失败：{0}",
-  "install.read_system_dir_failed": "读取 system/{0} patch 目录失败：{1}",
   "install.read_target_failed": "读取目标文件失败：{0}",
   "install.read_target_failed_with_patch_path": "读取目标文件失败（patch 路径 `{0}`）：{1}",
   "install.registry_not_utf8": "registry 返回内容不是有效的 UTF-8",
@@ -118,7 +116,7 @@
   "install.version_not_found": "registry 中不存在版本 {0}",
   "install.version_not_found_with_available": "registry 中不存在版本 {0}，可用版本：{1}",
   "install.version_patch_set": "🧩 包版本 {0} → 补丁集 {1}",
-  "install.write_embedded_patch_failed": "写出内置 patch 失败：{0}/{1}",
+  "install.write_embedded_patch_failed": "写出内置 patch 失败：{0}",
   "install.write_patched_file_failed": "写回打过 patch 的文件失败：{0}",
   "install.write_readme_failed": "写入 README 失败：{0}",
   "language.available": "可用语言:{0}",
@@ -165,5 +163,8 @@
   "upgrade.set_exec_permission_failed": "设置可执行权限失败：{0}",
   "upgrade.unknown_exe_dir": "无法确定当前可执行文件所在目录",
   "upgrade.unknown_exe_name": "无法确定当前可执行文件名",
-  "upgrade.updated": "🎉 已更新到 {0}，重新运行 `unity --version` 可确认。"
+  "upgrade.updated": "🎉 已更新到 {0}，重新运行 `unity --version` 可确认。",
+  "install.parse_manifest_failed": "解析内置补丁清单（patches/manifest.json）失败",
+  "install.manifest_patch_missing": "补丁 `{0}` 在 manifest 里登记了但未内嵌进 exe",
+  "install.no_patch_set_rule": "manifest 里没有匹配包版本 {0} 的补丁集"
 }
