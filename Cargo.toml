@@ -1,6 +1,6 @@
 [package]
 name = "unity_pipeline_cli"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 # 单元测试放在 tests/{install,i18n,upgrade}.rs，由 src/ 里对应的
 # #[path] 声明挂载为子模块（见各测试文件头注释）；关掉自动发现，
