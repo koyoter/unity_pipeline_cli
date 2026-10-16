@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex,
+    Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
 
@@ -30,9 +31,79 @@ const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 /// How many times to re-send a request the server answered with a retryable "busy" reply
 /// (Editor settling after startup, or blocked by a modal dialog) before giving up.
 const BUSY_RETRY_ATTEMPTS: u32 = 30;
+/// Wall-clock cap on riding out "editor busy" retries for one tool call, override with
+/// UNITY_MCP_MAX_WAIT_SECS. The MCP host runs its own call timeout and drops or kills a server
+/// that sits silent past it, so we must answer before that even while the editor is busy.
+const BUSY_WAIT_DEFAULT: u64 = 60;
 
 pub struct Options {
     pub project_path: Option<String>,
+}
+
+/// When UNITY_MCP_TRACE names a file, every protocol line in and out, every busy retry and any
+/// panic land there with a millisecond timestamp — the only record that survives when a host
+/// kills the server from outside. Off unless the variable is set; `install --trace` and
+/// `configure mcp --trace` print a config snippet that points it at the exe-side log.
+static TRACE_FILE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// Long tool results (base64 screenshots especially) are clipped so one capture_game_view call
+/// cannot balloon the log.
+const TRACE_LINE_LIMIT: usize = 2000;
+
+fn trace_init() -> Option<&'static PathBuf> {
+    let path = std::env::var_os("UNITY_MCP_TRACE")
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from);
+    if path.is_some() {
+        std::panic::set_hook(Box::new(|info| {
+            trace(&format!(
+                "!! panic: {info}\n{}",
+                std::backtrace::Backtrace::force_capture()
+            ));
+        }));
+    }
+    let _ = TRACE_FILE.set(path);
+    TRACE_FILE.get().and_then(|p| p.as_ref())
+}
+
+fn trace(msg: &str) {
+    let Some(path) = TRACE_FILE.get().and_then(|p| p.as_ref()) else {
+        return;
+    };
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    else {
+        return;
+    };
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    if msg.len() > TRACE_LINE_LIMIT {
+        let mut end = TRACE_LINE_LIMIT;
+        while !msg.is_char_boundary(end) {
+            end -= 1;
+        }
+        let _ = writeln!(
+            file,
+            "{ms} {}… [+{} bytes truncated]",
+            &msg[..end],
+            msg.len() - TRACE_LINE_LIMIT
+        );
+    } else {
+        let _ = writeln!(file, "{ms} {msg}");
+    }
+}
+
+/// Effective busy-wait budget for one tool call.
+fn max_wait_secs() -> u64 {
+    std::env::var("UNITY_MCP_MAX_WAIT_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .unwrap_or(BUSY_WAIT_DEFAULT)
 }
 
 pub fn run(opts: Options) -> Result<()> {
@@ -44,6 +115,16 @@ pub fn run(opts: Options) -> Result<()> {
     let stdout = std::io::stdout();
 
     // Announce readiness on stderr — stdout carries only protocol messages.
+    let trace_path = trace_init();
+    trace(&format!(
+        "== start pid={} v{SERVER_VERSION} busy-wait-cap={}s project_path={:?} trace={}",
+        std::process::id(),
+        max_wait_secs(),
+        opts.project_path,
+        trace_path
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "off".to_owned())
+    ));
     eprintln!("unity mcp: server started on stdio, waiting for client requests");
 
     let stdin = std::io::stdin();
@@ -53,9 +134,15 @@ pub fn run(opts: Options) -> Result<()> {
     while !stop.load(Ordering::Relaxed) {
         line.clear();
         match reader.read_line(&mut line) {
-            Ok(0) => break, // client closed stdin
+            Ok(0) => {
+                trace("client closed stdin");
+                break; // client closed stdin
+            }
             Ok(_) => {}
-            Err(_) => break,
+            Err(err) => {
+                trace(&format!("!! stdin read error: {err}"));
+                break;
+            }
         }
         // A UTF-8 BOM in front of the first message is not valid JSON but is what some hosts
         // (e.g. a PowerShell script driving the server through its default stdin writer) emit;
@@ -67,6 +154,7 @@ pub fn run(opts: Options) -> Result<()> {
         if trimmed.is_empty() {
             continue;
         }
+        trace(&format!("→ {trimmed}"));
 
         let msg: Value = match serde_json::from_str(&trimmed) {
             Ok(v) => v,
@@ -127,15 +215,23 @@ pub fn run(opts: Options) -> Result<()> {
         }
     }
 
+    trace("== exit");
     Ok(())
 }
 
 fn write_message(stdout: &std::io::Stdout, msg: &Value) -> Result<()> {
     let text = crate::json::compact(msg);
+    trace(&format!("← {text}"));
     let mut lock = stdout.lock();
-    lock.write_all(text.as_bytes())?;
-    lock.write_all(b"\n")?;
-    lock.flush()?;
+    let sent = lock
+        .write_all(text.as_bytes())
+        .and_then(|_| lock.write_all(b"\n"))
+        .and_then(|_| lock.flush());
+    if let Err(err) = sent {
+        // The host closed its side: nothing left to serve, but the trace keeps the reason.
+        trace(&format!("!! stdout write failed: {err}"));
+        return Err(err.into());
+    }
     Ok(())
 }
 
@@ -197,6 +293,7 @@ fn handle_tools_list(
             // back an empty catalog (so the client still completes initialize + list) and let a
             // later call re-discover the Editor.
             invalidate(state);
+            trace(&format!("stderr: {err:#}"));
             eprintln!("unity mcp: {err:#}");
             (success_response(id, json!({ "tools": [] })), false)
         }
@@ -292,6 +389,8 @@ fn execute_tool_with_retry(
     state: &Mutex<Option<Target>>,
     opts: &Options,
 ) -> Result<Value> {
+    let wait_budget = Duration::from_secs(max_wait_secs());
+    let started = Instant::now();
     let mut attempt = 0u32;
     loop {
         attempt += 1;
@@ -303,10 +402,26 @@ fn execute_tool_with_retry(
                     continue;
                 }
                 if let Some(delay) = retry_delay(&err) {
-                    if attempt <= BUSY_RETRY_ATTEMPTS {
+                    let waited = started.elapsed();
+                    // The MCP host times this call out on its side and will drop or kill a
+                    // server that stays silent past that point — surface the busy error here
+                    // instead of hanging until the host decides the server is gone.
+                    if attempt <= BUSY_RETRY_ATTEMPTS && waited < wait_budget {
+                        trace(&format!(
+                            ".. {name}: editor busy, retry {attempt} in {delay}s (waited {:.1}s)",
+                            waited.as_secs_f32()
+                        ));
                         std::thread::sleep(Duration::from_secs(delay));
                         continue;
                     }
+                    trace(&format!(
+                        ".. {name}: giving up after {attempt} attempts / {:.1}s",
+                        waited.as_secs_f32()
+                    ));
+                    return Err(anyhow!(
+                        "Unity Editor still busy after {:.0}s ({attempt} attempts): {err:#}",
+                        waited.as_secs_f32()
+                    ));
                 }
                 return Err(err);
             }

@@ -80,6 +80,9 @@ enum TopCommand {
         /// Reuse an existing tarball in `downloads/` instead of re-fetching.
         #[arg(long)]
         keep_cache: bool,
+        /// Print the MCP config with UNITY_MCP_TRACE pointing at a log file next to the exe.
+        #[arg(long)]
+        trace: bool,
     },
     /// Print client-agnostic configuration snippets (currently: `mcp`).
     Configure {
@@ -98,7 +101,11 @@ enum TopCommand {
 #[derive(Subcommand)]
 enum ConfigureTarget {
     /// Print a generic MCP `mcpServers` config entry for this binary.
-    Mcp,
+    Mcp {
+        /// Include UNITY_MCP_TRACE (log file next to the exe) in the printed entry.
+        #[arg(long)]
+        trace: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -158,10 +165,12 @@ fn main() -> ExitCode {
             version,
             latest,
             keep_cache,
+            trace,
         } => match install::run(install::Options {
             version,
             latest,
             keep_cache,
+            trace,
         }) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
@@ -170,7 +179,7 @@ fn main() -> ExitCode {
             }
         },
         TopCommand::Configure { target } => match target {
-            ConfigureTarget::Mcp => match configure::print_mcp_config(None) {
+            ConfigureTarget::Mcp { trace } => match configure::print_mcp_config(None, trace) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(err) => {
                     eprintln!("{}: {err:#}", i18n::t("error.prefix"));

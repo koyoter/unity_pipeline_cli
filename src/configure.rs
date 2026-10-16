@@ -13,7 +13,9 @@ use crate::i18n::t;
 ///
 /// When `project_path` is provided, the printed args pin the server to that
 /// specific Unity project, so multiple Editors can coexist without ambiguity.
-pub fn print_mcp_config(project_path: Option<&Path>) -> Result<()> {
+/// When `trace` is set, the entry carries `UNITY_MCP_TRACE` pointing at a log file next to the
+/// binary, turning on the server's full protocol trace (see `mcp.rs`).
+pub fn print_mcp_config(project_path: Option<&Path>, trace: bool) -> Result<()> {
     let exe = std::env::current_exe()?;
     let command = format_exe_for_config(&exe);
     let name = server_name(&exe);
@@ -22,12 +24,23 @@ pub fn print_mcp_config(project_path: Option<&Path>) -> Result<()> {
         args.push("--project-path".to_owned());
         args.push(p.to_string_lossy().into_owned());
     }
+    let mut entry = json!({
+        "command": command,
+        "args": args,
+    });
+    if trace {
+        if let Some(dir) = exe.parent() {
+            entry["env"] = json!({
+                "UNITY_MCP_TRACE": dir
+                    .join("unity-mcp-trace.log")
+                    .to_string_lossy()
+                    .into_owned(),
+            });
+        }
+    }
     let config = json!({
         "mcpServers": {
-            name: {
-                "command": command,
-                "args": args,
-            }
+            name: entry
         }
     });
     println!("{}", crate::json::pretty(&config));

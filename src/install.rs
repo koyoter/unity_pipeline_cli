@@ -31,6 +31,8 @@ pub struct Options {
     pub latest: bool,
     /// Never re-download when the tarball is already in `downloads/`.
     pub keep_cache: bool,
+    /// Print the MCP config with UNITY_MCP_TRACE pointing at a log file next to the exe.
+    pub trace: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -245,7 +247,8 @@ pub fn run(opts: Options) -> Result<()> {
     println!("{}", t("install.switch_to_unity"));
     println!();
     println!("{}", t("install.mcp_config_example"));
-    if let Err(err) = crate::configure::print_mcp_config(Some(target_project.as_path())) {
+    if let Err(err) = crate::configure::print_mcp_config(Some(target_project.as_path()), opts.trace)
+    {
         eprintln!(
             "{}",
             tr("install.gen_mcp_config_failed", &[&format!("{err:#}")])
