@@ -81,6 +81,9 @@ fn trace(msg: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
+    // UTC on both sides of the epoch stamp: the ISO form lines up with Unity/host logs,
+    // the raw millis keeps existing greps and duration math working.
+    let stamp = iso8601_utc(ms);
     if msg.len() > TRACE_LINE_LIMIT {
         let mut end = TRACE_LINE_LIMIT;
         while !msg.is_char_boundary(end) {
@@ -88,13 +91,58 @@ fn trace(msg: &str) {
         }
         let _ = writeln!(
             file,
-            "{ms} {}… [+{} bytes truncated]",
+            "{stamp} {ms} {}… [+{} bytes truncated]",
             &msg[..end],
             msg.len() - TRACE_LINE_LIMIT
         );
     } else {
-        let _ = writeln!(file, "{ms} {msg}");
+        let _ = writeln!(file, "{stamp} {ms} {msg}");
     }
+}
+
+/// UTC ISO-8601 with milliseconds, from Unix epoch millis. No local time zone: the standard
+/// library cannot read it without a platform dependency, and a fixed offset is what log
+/// correlation needs anyway.
+fn iso8601_utc(epoch_ms: u128) -> String {
+    let secs = (epoch_ms / 1000) as i64;
+    let millis = (epoch_ms % 1000) as u32;
+    let days = secs.div_euclid(86_400);
+    let secs_of_day = secs.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let (hour, minute, second) = (
+        secs_of_day / 3600,
+        (secs_of_day % 3600) / 60,
+        secs_of_day % 60,
+    );
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
+}
+
+/// Days since 1970-01-01 to a proleptic Gregorian date (Howard Hinnant's civil_from_days).
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = (z - era * 146_097) as u64;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era as i64 + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let mp = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Short, non-reversible fingerprint so traces can tell token rotations apart without writing
+/// the secret itself to disk.
+fn token_fingerprint(token: Option<&str>) -> String {
+    let Some(token) = token.filter(|t| !t.is_empty()) else {
+        return "none".to_owned();
+    };
+    use sha1::{Digest, Sha1};
+    format!("{:x}", Sha1::digest(token.as_bytes()))
+        .chars()
+        .take(8)
+        .collect()
 }
 
 /// Effective busy-wait budget for one tool call.
@@ -110,6 +158,9 @@ pub fn run(opts: Options) -> Result<()> {
     let state = Mutex::new(None::<Target>);
     // Tool names from the last successful catalog fetch, so a change can be announced.
     let known_tools = Mutex::new(None::<HashSet<String>>);
+    // Last full catalog, served instead of an empty list when a refresh fails: emptying the
+    // host's tool set is what turns a recoverable outage into "MCP tool is not found".
+    let last_tools = Mutex::new(None::<Vec<Value>>);
     let initialized = AtomicBool::new(false);
     let stop = AtomicBool::new(false);
     let stdout = std::io::stdout();
@@ -188,7 +239,7 @@ pub fn run(opts: Options) -> Result<()> {
             "ping" => write_message(&stdout, &success_response(id.clone(), json!({})))?,
             "tools/list" => {
                 let (response, changed) =
-                    handle_tools_list(id.clone(), &state, &opts, &known_tools);
+                    handle_tools_list(id.clone(), &state, &opts, &known_tools, &last_tools);
                 write_message(&stdout, &response)?;
                 if changed && initialized.load(Ordering::Relaxed) {
                     write_message(
@@ -285,8 +336,9 @@ fn handle_tools_list(
     state: &Mutex<Option<Target>>,
     opts: &Options,
     known_tools: &Mutex<Option<HashSet<String>>>,
+    last_tools: &Mutex<Option<Vec<Value>>>,
 ) -> (Value, bool) {
-    match refresh_tools(state, opts, known_tools) {
+    match refresh_tools(state, opts, known_tools, last_tools) {
         Ok((tools, changed)) => (success_response(id, json!({ "tools": tools })), changed),
         Err(err) => {
             // An unreachable Editor is a normal state to start in, not a protocol error: hand
@@ -295,7 +347,23 @@ fn handle_tools_list(
             invalidate(state);
             trace(&format!("stderr: {err:#}"));
             eprintln!("unity mcp: {err:#}");
-            (success_response(id, json!({ "tools": [] })), false)
+            // Once a catalog has been served, never answer with an empty one: hosts treat that
+            // as every tool being unregistered ("MCP tool is not found") and do not re-list on
+            // their own. The stale list keeps calls working until the next discovery succeeds.
+            let stale = last_tools.lock().unwrap().clone();
+            match stale {
+                Some(tools) if !tools.is_empty() => {
+                    trace(&format!(
+                        ".. serving cached catalog ({} tools) until the editor is reachable",
+                        tools.len()
+                    ));
+                    (success_response(id, json!({ "tools": tools })), false)
+                }
+                _ => {
+                    trace(".. no catalog served yet; answering with an empty list");
+                    (success_response(id, json!({ "tools": [] })), false)
+                }
+            }
         }
     }
 }
@@ -356,14 +424,37 @@ fn refresh_tools(
     state: &Mutex<Option<Target>>,
     opts: &Options,
     known_tools: &Mutex<Option<HashSet<String>>>,
+    last_tools: &Mutex<Option<Vec<Value>>>,
 ) -> Result<(Vec<Value>, bool)> {
     let target = ensure_connection(state, opts)?;
     // Re-fetch the catalog on every list, mirroring the JS behavior so that
     // domain reloads picking up new commands surface promptly.
-    let tools = fetch_tools(&target).map_err(|err| {
-        invalidate(state);
-        err
-    })?;
+    let tools = match fetch_tools(&target) {
+        Ok(tools) => tools,
+        Err(first_err) => {
+            // The cached target carries the eval token read when it was discovered. A domain
+            // reload or Editor restart replaces the descriptor and rotates that token, which
+            // answers 401 — drop the stale target and rediscover before giving up, otherwise
+            // the host is handed an empty catalog and every tool reads as "not found".
+            trace(&format!(".. tools/list: {first_err:#}; rediscovering editor"));
+            invalidate(state);
+            let fresh = ensure_connection(state, opts).map_err(|err| {
+                trace(&format!(".. rediscovery failed: {err:#}"));
+                err
+            })?;
+            match fetch_tools(&fresh) {
+                Ok(tools) => {
+                    trace(".. rediscovered editor; catalog refreshed");
+                    tools
+                }
+                Err(err) => {
+                    invalidate(state);
+                    trace(&format!(".. rediscovered editor but catalog fetch failed: {err:#}"));
+                    return Err(err);
+                }
+            }
+        }
+    };
 
     let names: HashSet<String> = tools
         .iter()
@@ -377,6 +468,7 @@ fn refresh_tools(
         *guard = Some(names);
         changed
     };
+    *last_tools.lock().unwrap() = Some(tools.clone());
     Ok((tools, changed))
 }
 
@@ -395,7 +487,13 @@ fn execute_tool_with_retry(
     loop {
         attempt += 1;
         match execute_tool_once(name, args, state, opts) {
-            Ok(v) => return Ok(v),
+            Ok(v) => {
+                trace(&format!(
+                    ".. {name}: ok in {:.0}ms",
+                    started.elapsed().as_secs_f64() * 1000.0
+                ));
+                return Ok(v);
+            }
             Err(err) => {
                 if (pipeline::is_401(&err) || is_transient(&err)) && attempt <= 2 {
                     invalidate(state);
@@ -423,6 +521,10 @@ fn execute_tool_with_retry(
                         waited.as_secs_f32()
                     ));
                 }
+                trace(&format!(
+                    ".. {name}: failed after {:.0}ms: {err:#}",
+                    started.elapsed().as_secs_f64() * 1000.0
+                ));
                 return Err(err);
             }
         }
@@ -599,6 +701,16 @@ fn ensure_connection(state: &Mutex<Option<Target>>, opts: &Options) -> Result<Ta
     }
     let target = find_target(opts.project_path.as_deref())?;
     ensure_reachable(&target)?;
+    trace(&format!(
+        ".. editor port={} pid={} token={} project={}",
+        target.port,
+        target
+            .pid
+            .map(|pid| pid.to_string())
+            .unwrap_or_else(|| "-".to_owned()),
+        token_fingerprint(target.eval_token.as_deref()),
+        target.project_path.display()
+    ));
     let mut guard = state.lock().unwrap();
     *guard = Some(target.clone());
     Ok(target)
@@ -686,3 +798,7 @@ where
     }
     Err(anyhow!("Timed out waiting for {command}"))
 }
+
+#[cfg(test)]
+#[path = "../tests/mcp.rs"]
+mod tests;

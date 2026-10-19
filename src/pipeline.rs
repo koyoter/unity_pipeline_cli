@@ -18,6 +18,8 @@ pub struct Target {
     pub port: u16,
     pub project_path: PathBuf,
     pub eval_token: Option<String>,
+    /// Editor process id from the port descriptor; absent when the descriptor omitted it.
+    pub pid: Option<u32>,
     /// Guidance the Editor published about itself on its port descriptor (see
     /// [`crate::editor::PortDescriptor::info`]).
     pub info: Option<String>,
@@ -261,6 +263,7 @@ pub fn find_target(project_path: Option<&str>) -> Result<Target> {
         port: descriptor.port,
         project_path: path,
         eval_token: descriptor.eval_token,
+        pid: descriptor.pid,
         info: descriptor.info,
     })
 }
