@@ -39,5 +39,19 @@
       "Editor.PipelineAnalytics.cs@2.patch",
       "Editor.Console.EditorConsoleGroundTruth.cs@1.patch"
     ]
+  },
+  "0.9": {
+    "from": "0.9.0-exp.1",
+    "patches": [
+      "Editor.Commands.Assets.AssetCommands.cs@1.patch",
+      "Editor.Commands.Materials.MaterialCommands.cs@1.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.Microsoft.CodeAnalysis.CSharp.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.Microsoft.CodeAnalysis.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Collections.Immutable.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Reflection.Metadata.dll.meta@2.patch",
+      "Runtime.Plugins.CodeAnalysis.UnityPipeline.System.Runtime.CompilerServices.Unsafe.dll.meta@2.patch",
+      "Editor.PipelineAnalytics.cs@3.patch",
+      "Editor.Console.EditorConsoleGroundTruth.cs@1.patch"
+    ]
   }
 }

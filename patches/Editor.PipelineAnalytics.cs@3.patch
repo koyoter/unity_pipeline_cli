@@ -1,0 +1,35 @@
+diff --git a/Editor/PipelineAnalytics.cs b/Editor/PipelineAnalytics.cs
+index b22dd99..cf012b7 100644
+--- a/Editor/PipelineAnalytics.cs
++++ b/Editor/PipelineAnalytics.cs
+@@ -1,3 +1,4 @@
++#if ENABLE_ANALYTICS
+ using System;
+ using System.Collections.Generic;
+ using System.Linq;
+@@ -364,3 +365,25 @@ namespace Unity.Pipeline.Editor
+         }
+     }
+ }
++#else
++namespace Unity.Pipeline.Editor
++{
++    /// <summary>
++    /// No-op stand-in for <c>PipelineAnalytics</c>, compiled because <c>ENABLE_ANALYTICS</c> is not
++    /// defined. Patched in by unity_pipeline_cli: the real implementation binds editor-analytics
++    /// APIs that older Editors (2022.3) do not ship, so the whole class is replaced rather than
++    /// guarding each call site. Only the two entry points the package calls are kept, with their
++    /// production signatures, so call sites compile untouched.
++    /// </summary>
++    internal static class PipelineAnalytics
++    {
++        internal static void RecordCommandExecuted(in CommandExecutionInfo info)
++        {
++        }
++
++        internal static void SendSessionStoppedIfStarted()
++        {
++        }
++    }
++}
++#endif

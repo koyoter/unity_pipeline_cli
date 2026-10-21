@@ -113,7 +113,7 @@ fn collect_patch_sources_orders_system_then_custom() {
 /// Version → patch-set selection against the real embedded manifest:
 /// cutoffs are prerelease-aware (`0.7.0-exp.1 < 0.7.0`), highest matching
 /// `from` wins, older versions fall to `legacy` (from `0.0.0`), and
-/// anything newer than the last cutoff sticks to it (0.9.0 → 0.8).
+/// anything newer than the last cutoff sticks to it (0.10.0 → 0.9).
 #[test]
 fn select_patch_set_matches_version_cutoffs() {
     let manifest = parse_manifest().unwrap();
@@ -127,7 +127,10 @@ fn select_patch_set_matches_version_cutoffs() {
     assert_eq!(set("0.8.0-exp.0"), "0.7");
     assert_eq!(set("0.8.0-exp.1"), "0.8");
     assert_eq!(set("0.8.0"), "0.8");
-    assert_eq!(set("0.9.0"), "0.8");
+    assert_eq!(set("0.9.0-exp.0"), "0.8");
+    assert_eq!(set("0.9.0-exp.1"), "0.9");
+    assert_eq!(set("0.9.0"), "0.9");
+    assert_eq!(set("0.10.0"), "0.9");
 }
 
 /// 最低版本门槛：0.6.0-exp.1 及以上保留，更低的（含 0.6.0-exp.0）和解析
@@ -284,7 +287,7 @@ fn embedded_patch_applies_to_cached_packages() {
         // CSharp's (Editor-only). Guards against malformed block
         // reconstruction — a missing `settings:` line once made Unity
         // uncheck every platform for the Unsafe plugin.
-        if patch_set == "0.7" || patch_set == "0.8" {
+        if patch_set == "0.7" || patch_set == "0.8" || patch_set == "0.9" {
             let meta_dir = dest.join("Runtime/Plugins/CodeAnalysis");
             let platform_block = |name: &str| -> Vec<String> {
                 let text =
@@ -323,6 +326,37 @@ fn embedded_patch_applies_to_cached_packages() {
                     "UnityPipeline.Microsoft.CodeAnalysis.CSharp.dll.meta"
                 ),
                 "Unsafe 的 platformData 块应与其余 Roslyn .meta 一致（Editor-only）"
+            );
+        }
+
+        // 0.9+ analytics guard: the real implementation is wrapped in
+        // `#if ENABLE_ANALYTICS` and a no-op stand-in follows in `#else`. The
+        // stand-in must keep the two entry points the package calls, or the
+        // Editor assembly stops compiling on 2022.3 (where the guard is off).
+        if patch_set == "0.9" {
+            let analytics =
+                std::fs::read_to_string(dest.join("Editor/PipelineAnalytics.cs")).unwrap();
+            assert!(
+                analytics.starts_with("#if ENABLE_ANALYTICS\n"),
+                "analytics 补丁应把原实现整体括进 #if ENABLE_ANALYTICS"
+            );
+            let (real, stub) = analytics
+                .split_once("#else\n")
+                .expect("analytics 补丁应提供 #else 空实现");
+            assert!(
+                real.contains("EditorAnalytics.SendAnalytic"),
+                "#if 分支应保留原 analytics 实现"
+            );
+            assert!(
+                !stub.contains("EditorAnalytics.SendAnalytic"),
+                "#else 空实现不得再触碰 analytics API"
+            );
+            assert!(
+                stub.contains("class PipelineAnalytics")
+                    && stub.contains("RecordCommandExecuted(in CommandExecutionInfo info)")
+                    && stub.contains("SendSessionStoppedIfStarted()")
+                    && stub.ends_with("#endif\n"),
+                "#else 空实现应保留两个入口点并以 #endif 收尾"
             );
         }
     }

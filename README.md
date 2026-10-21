@@ -119,7 +119,7 @@ unity_pipeline_cli command eval --code "1+1"  # 带参执行
 
 ### 补丁机制
 
-- 内置补丁编译期内嵌进 exe（`build.rs`），扁平存放于 `patches/`：一个上游目标文件一个补丁文件，命名 `<目标路径编码>@<自增长序号>.patch`；版本适配规则在 `patches/manifest.json`（每个补丁集声明 `from` 起始版本和整表补丁清单，取 `from ≤ 包版本` 的最大者整表应用，如 `0.9.0` 没有 `0.9` 档就落到 `0.8` 档）；安装时先 dry-run，通过后才应用
+- 内置补丁编译期内嵌进 exe（`build.rs`），扁平存放于 `patches/`：一个上游目标文件一个补丁文件，命名 `<目标路径编码>@<自增长序号>.patch`；版本适配规则在 `patches/manifest.json`（每个补丁集声明 `from` 起始版本和整表补丁清单，取 `from ≤ 包版本` 的最大者整表应用，如 `0.9.0` 用 `0.9` 档、比最后一档还新的版本沿用该档）；安装时先 dry-run，通过后才应用
 - 自定义补丁放在运行目录 `patchs/custom/`，命名 `modify_unity_local_1.patch`、`modify_unity_local_2.patch`……按编号升序在内置补丁之后应用
 - `patchs/system/` 是 exe 内置补丁中当前选中补丁集的自动镜像，每次安装重建，请勿手改
 
