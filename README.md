@@ -10,9 +10,9 @@
 
 ## 核心能力
 
-- 🤖 **AI 桥接（MCP，主打）**：Editor 内注册的每条管线指令自动暴露为 MCP 工具（含 JSON Schema 参数描述）。连接失效自动重连、Editor 忙碌自动重试、`recompile` 等到编译结束才返回、截图直接以图片回传、Bearer Token 全程脱敏。
+- 🤖 **AI 桥接（MCP，主打）**：Editor 内注册的每条管线指令自动暴露为 MCP 工具（含 JSON Schema 参数描述）。连接失效自动重连、Editor 忙碌自动重试、截图直接以图片回传、Bearer Token 全程脱敏。
 - 🛠 **一键安装**：从 UPM registry 拉取 `com.unity.pipeline`，SHA1 校验，按包版本自动匹配内置补丁后装入运行中的项目，解决上游包在 Unity 2022 等环境开箱不可用的问题。
-- 🎮 **命令直控**：`command` 列出或执行 Editor 内的全部管线指令，参数本地校验，`--json` 机器可读输出，适合脚本与 CI。
+- 🎮 **命令直控**：`command` 列出或执行 Editor 内的全部管线指令，命令名与 JSON 参数原样转发，`--json` 机器可读输出，适合脚本与 CI。
 - 🔍 **实例发现**：`projects` 列出所有运行中的 Editor 及其 Pipeline 服务状态（端口 / 版本 / 可达性）。
 
 ## 快速上手
@@ -72,20 +72,20 @@ unity_pipeline_cli language zh   # 切换到中文（en / zh）
 ### `command` — 列出 / 执行管线指令
 
 ```bash
-unity_pipeline_cli command                    # 列出全部指令及参数说明
-unity_pipeline_cli command editor_play        # 执行无参指令
-unity_pipeline_cli command eval --code "1+1"  # 带参执行
+unity_pipeline_cli command                                  # 列出全部指令
+unity_pipeline_cli command editor.status                    # 执行无参指令（点号形式）
+unity_pipeline_cli command "asset find" '{"type":"Material"}'  # 带参执行（空格全名 + JSON 参数）
 ```
+
+命令名原样转发，服务端自己解析：分组命名（包 0.9+）可写 `"asset find"` 或 `asset.find`，老版本包用扁平名（如 `run_tests`）。参数是一个 JSON 对象字符串，同样原样转发，校验由服务端完成（错误连 `argProblems` 明细一起透传）。
 
 | 参数 | 说明 |
 | :--- | :--- |
-| `<name>` | 指令名；省略则列出全部可用指令 |
-| `--<param> <value>` | 指令参数，支持 `--k=v`、裸 `--flag`（按 `true` 处理）、位置参数（按声明顺序映射到必选参数） |
+| `<name>` | 指令名，原样转发；省略则列出全部可用指令 |
+| `[params]` | 指令参数，JSON 对象字符串 |
 | `--project-path <路径>` | 多个 Editor 同时运行时锁定目标 |
 | `--timeout <秒>` | 同时限定本地等待与服务端执行预算（默认 30） |
 | `--json` | 机器可读输出 |
-
-未知参数会在本地直接拦截，并打印该指令的参数说明。
 
 ### `mcp` — MCP 服务端（由 AI 客户端拉起，勿手动运行）
 
@@ -95,8 +95,8 @@ unity_pipeline_cli command eval --code "1+1"  # 带参执行
 
 - 指令目录自动映射为 tools；Editor 域重载后新增的指令会通过 `tools/list_changed` 通知客户端刷新
 - 连接失效（Editor 重启 / 域重载）自动重新发现；Editor 忙碌时按服务端 `Retry-After` 自动重试（至多 30 次）；被模态对话框阻塞时直接报错并转发 Editor 给出的提示
-- `recompile` 自动轮询状态直到编译结束；`run_tests` / `wait_for` 自带的超时参数端到端生效
-- `capture_game_view` / `capture_scene_view` 以 MCP 图片内容返回（base64 PNG）
+- 任何返回 PNG 的指令（截图类）自动以 MCP 图片内容返回（base64）；任何自带 `timeout` / `timeout_s`（秒）参数的指令，该超时端到端生效
+- 工具名与命令目录同源（`asset.create` 一类点号全名），跨组唯一；MCP 层零硬编码命令名，包 0.6 → 0.9 全兼容
 - 所有返回文本中的 Bearer Token 一律替换为 `[redacted]`
 - 兼容 MCP 协议版本 `2024-11-05` / `2025-03-26` / `2025-06-18`
 

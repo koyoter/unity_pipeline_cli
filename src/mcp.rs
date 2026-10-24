@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::pipeline::{
     self, command_input_schema, ensure_reachable, execute, fetch_commands, find_target,
-    is_failed_eval_envelope, is_transient, normalize_status, retry_delay, ExecBudget, Target,
+    is_failed_eval_envelope, is_transient, retry_delay, tool_name, ExecBudget, Target,
 };
 
 /// Newest protocol revision this server speaks; also the fallback when a client asks for one we
@@ -21,12 +21,8 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 const SUPPORTED_PROTOCOL_VERSIONS: [&str; 3] = ["2024-11-05", "2025-03-26", "2025-06-18"];
 const SERVER_NAME: &str = "unity-mcp";
 const SERVER_VERSION: &str = "1.0.0-rust";
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
-const RECOMPILE_POLL_TIMEOUT: Duration = Duration::from_secs(120);
 /// Default budget for one tool call, applied to both sides of the wire (`tool_budget`).
 const HTTP_TIMEOUT: Duration = Duration::from_secs(60);
-/// Status polls are short reads of an already-running command, not command executions.
-const POLL_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 /// How many times to re-send a request the server answered with a retryable "busy" reply
 /// (Editor settling after startup, or blocked by a modal dialog) before giving up.
@@ -249,7 +245,8 @@ pub fn run(opts: Options) -> Result<()> {
                 }
             }
             "tools/call" => {
-                let response = handle_tools_call(id.clone(), &msg, &state, &opts);
+                let response =
+                    handle_tools_call(id.clone(), &msg, &state, &opts, &last_tools);
                 write_message(&stdout, &response)?;
             }
             "shutdown" => {
@@ -373,6 +370,7 @@ fn handle_tools_call(
     msg: &Value,
     state: &Mutex<Option<Target>>,
     opts: &Options,
+    last_tools: &Mutex<Option<Vec<Value>>>,
 ) -> Value {
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
     let name = params
@@ -385,7 +383,7 @@ fn handle_tools_call(
     }
     let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
 
-    match execute_tool_with_retry(&name, &args, state, opts) {
+    match execute_tool_with_retry(&name, &args, state, opts, last_tools) {
         Ok(result) => success_response(id, result),
         Err(err) => {
             // Report tool errors inside the result envelope, not as JSON-RPC
@@ -475,18 +473,23 @@ fn refresh_tools(
 /// Run one tool, transparently recovering from the two states that are not real failures:
 /// a connection this process has gone stale on (the Editor restarted or reloaded its domain),
 /// and a server that says it is busy and asks to be retried shortly.
+///
+/// `schemas` is the last successfully served tool list; it carries each tool's `inputSchema`,
+/// whose `timeout` default (when the caller passed none) states how long the command intends
+/// to run.
 fn execute_tool_with_retry(
     name: &str,
     args: &Value,
     state: &Mutex<Option<Target>>,
     opts: &Options,
+    schemas: &Mutex<Option<Vec<Value>>>,
 ) -> Result<Value> {
     let wait_budget = Duration::from_secs(max_wait_secs());
     let started = Instant::now();
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match execute_tool_once(name, args, state, opts) {
+        match execute_tool_once(name, args, state, opts, schemas) {
             Ok(v) => {
                 trace(&format!(
                     ".. {name}: ok in {:.0}ms",
@@ -531,11 +534,16 @@ fn execute_tool_with_retry(
     }
 }
 
+/// Run one tool: forward the name and arguments verbatim to `/api/exec` and shape the reply
+/// into MCP content. No command is special-cased — a command whose result implies follow-up
+/// (e.g. a recompile returning "poll recompile_status") says so in its own description and
+/// result text, which is what the caller acts on.
 fn execute_tool_once(
     name: &str,
     args: &Value,
     state: &Mutex<Option<Target>>,
     opts: &Options,
+    schemas: &Mutex<Option<Vec<Value>>>,
 ) -> Result<Value> {
     let target = ensure_connection(state, opts)?;
 
@@ -546,50 +554,42 @@ fn execute_tool_once(
         _ => json!({}),
     };
 
-    let mut result = match execute(&target, name, &params, tool_budget(name, &params)) {
-        Ok(v) => v,
-        Err(err) => {
-            // A successful recompile reloads the AppDomain that is answering this very request,
-            // so the connection dropping mid-call is expected. The recompile_status poll below
-            // is what reports the outcome.
-            if name == "recompile" && is_transient(&err) {
-                Value::Null
-            } else {
-                return Err(err);
-            }
-        }
+    let schema = {
+        let guard = schemas.lock().unwrap();
+        guard
+            .as_ref()
+            .and_then(|tools| {
+                tools
+                    .iter()
+                    .find(|t| t.get("name").and_then(Value::as_str) == Some(name))
+                    .and_then(|t| t.get("inputSchema"))
+                    .cloned()
+            })
     };
 
-    if name == "recompile" {
-        result = poll_status_until(
-            &target,
-            "recompile_status",
-            RECOMPILE_POLL_TIMEOUT,
-            is_recompile_done,
-        )?;
-    }
-
-    Ok(shape_tool_result(name, &result, target.eval_token.as_deref()))
+    let result = execute(&target, name, &params, tool_budget(&params, schema.as_ref()))?;
+    Ok(shape_tool_result(&result, target.eval_token.as_deref()))
 }
 
 /// How long one tool call gets, on both sides of the wire.
 ///
-/// The server aborts a main-thread command once the budget in the request is exceeded (60s when
-/// the request carries none), so a tool whose own argument already states how long it intends to
-/// run is honored end to end: `run_tests {timeout: 300}` would otherwise be cut off at 60s on
-/// the server while the caller had asked for 300.
-fn tool_budget(name: &str, args: &Value) -> ExecBudget {
-    match name {
-        // "Test execution timeout in seconds (default: 300)".
-        "run_tests" => {
-            ExecBudget::shared(seconds_arg(args, "timeout").unwrap_or(Duration::from_secs(300)))
-        }
-        // "Maximum seconds to wait (default 30, clamped to 0-600)".
-        "wait_for" => {
-            ExecBudget::shared(seconds_arg(args, "timeout_s").unwrap_or(Duration::from_secs(30)))
-        }
-        _ => ExecBudget::shared(HTTP_TIMEOUT),
-    }
+/// Any tool that states its own duration in a `timeout` (seconds) argument gets exactly that,
+/// honored end to end: the server aborts a main-thread command once the budget in the request
+/// is exceeded, so forwarding the caller's `timeout` is what makes an explicitly raised one
+/// mean anything (`test run` with `timeout: 300` would otherwise be cut off at 60s).
+/// `timeout_s` is the pre-0.9 spelling of the same argument (`wait_for`). When the caller
+/// passed neither, the command's own advertised default — the catalog schema's
+/// `properties.timeout.default` — applies before the 60s fallback. The server unified the
+/// per-command timeout meaning in 0.9 (AUTHAPI-58), so reading the argument shape covers
+/// every command without naming any of them.
+fn tool_budget(args: &Value, schema: Option<&Value>) -> ExecBudget {
+    let explicit = seconds_arg(args, "timeout").or_else(|| seconds_arg(args, "timeout_s"));
+    let declared = schema.and_then(|s| {
+        let props = s.get("properties")?;
+        seconds_arg(props.get("timeout")?, "default")
+            .or_else(|| seconds_arg(props.get("timeout_s")?, "default"))
+    });
+    ExecBudget::shared(explicit.or(declared).unwrap_or(HTTP_TIMEOUT))
 }
 
 /// A whole-second duration argument, in either the number or the string form a tool schema may
@@ -607,11 +607,14 @@ fn seconds_arg(args: &Value, key: &str) -> Option<Duration> {
     Some(Duration::from_secs_f64(secs.min(3600.0)))
 }
 
-fn shape_tool_result(name: &str, result: &Value, token: Option<&str>) -> Value {
-    if matches!(name, "capture_game_view" | "capture_scene_view") {
-        if let Some(shaped) = try_capture(result, token) {
-            return shaped;
-        }
+/// Shape one command result into MCP content by its form alone — never by command name, so
+/// every version's and every future command that returns the same shape is handled the same
+/// way: a PNG payload becomes an image block (hosts do not render base64 inside JSON text),
+/// an envelope that says `success: false` is marked `isError`, everything else is passed
+/// through as text.
+fn shape_tool_result(result: &Value, token: Option<&str>) -> Value {
+    if let Some(shaped) = try_capture(result, token) {
+        return shaped;
     }
     let text = match result {
         Value::String(s) => s.clone(),
@@ -625,27 +628,10 @@ fn shape_tool_result(name: &str, result: &Value, token: Option<&str>) -> Value {
             "text": text,
         }]
     });
-    if matches!(name, "eval" | "eval_file") && is_failed_eval_envelope(result) {
-        envelope["isError"] = Value::Bool(true);
-    }
-    if matches!(name, "recompile" | "recompile_status") && is_failed_recompile(result) {
+    if is_failed_eval_envelope(result) {
         envelope["isError"] = Value::Bool(true);
     }
     envelope
-}
-
-/// Whether a recompile status payload reports a compile that did not succeed. `recompile_status`
-/// answers with the status file's contents, where a failed build is `failed: true` (with the
-/// errors listed) or the native `compilationFailed` flag.
-fn is_failed_recompile(result: &Value) -> bool {
-    let status = normalize_status(result);
-    if status.get("failed").and_then(|v| v.as_bool()) == Some(true) {
-        return true;
-    }
-    if status.get("compilationFailed").and_then(|v| v.as_bool()) == Some(true) {
-        return true;
-    }
-    status.get("status").and_then(|v| v.as_str()) == Some("failed")
 }
 
 fn try_capture(result: &Value, token: Option<&str>) -> Option<Value> {
@@ -727,7 +713,10 @@ fn fetch_tools(target: &Target) -> Result<Vec<Value>> {
         .commands
         .into_iter()
         .filter_map(|cmd| {
-            let name = cmd.name.clone().filter(|s| !s.is_empty())?;
+            // The dotted full name (`asset.create`): unique across groups and valid for MCP
+            // hosts, where the server's bare `name` (`create`) collides. See
+            // [`pipeline::tool_name`].
+            let name = tool_name(&cmd)?;
             let description = cmd.description.clone().unwrap_or_else(|| name.clone());
             Some(json!({
                 "name": name,
@@ -736,67 +725,6 @@ fn fetch_tools(target: &Target) -> Result<Vec<Value>> {
             }))
         })
         .collect())
-}
-
-fn is_recompile_done(status: &Value) -> bool {
-    let status = normalize_status(status);
-    if status.get("isCompiling").and_then(|v| v.as_bool()) == Some(false) {
-        return true;
-    }
-    matches!(
-        status.get("status").and_then(|v| v.as_str()),
-        Some("completed") | Some("up_to_date") | Some("failed")
-    )
-}
-
-fn poll_status_until<F>(
-    target: &Target,
-    command: &str,
-    timeout: Duration,
-    is_done: F,
-) -> Result<Value>
-where
-    F: Fn(&Value) -> bool,
-{
-    let deadline = Instant::now() + timeout;
-    let params = json!({});
-    let mut last_ok: Option<Value> = None;
-    let mut last_err: Option<anyhow::Error> = None;
-    while Instant::now() < deadline {
-        std::thread::sleep(POLL_INTERVAL);
-        match execute(
-            target,
-            command,
-            &params,
-            ExecBudget::client_only(POLL_HTTP_TIMEOUT),
-        ) {
-            Ok(status) => {
-                if is_done(&status) {
-                    return Ok(status);
-                }
-                last_ok = Some(status);
-                last_err = None;
-            }
-            // The Editor is expected to disappear for part of this window (domain reload,
-            // restart), so transport failures are retried until the deadline.
-            Err(err) => {
-                if !is_transient(&err) && retry_delay(&err).is_none() {
-                    return Err(err);
-                }
-                last_err = Some(err);
-            }
-        }
-    }
-    if let Some(v) = last_ok {
-        return Err(anyhow!(
-            "Timed out waiting for {command}; last response: {}",
-            v
-        ));
-    }
-    if let Some(err) = last_err {
-        return Err(anyhow!("Timed out waiting for {command}; last error: {err:#}"));
-    }
-    Err(anyhow!("Timed out waiting for {command}"))
 }
 
 #[cfg(test)]

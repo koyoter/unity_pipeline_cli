@@ -12,7 +12,7 @@ This project is a streamlined, optimized take on the **Pipeline-package interact
 
 - 🤖 **AI bridging (MCP, the headline)**: every pipeline command registered inside the Editor is automatically exposed as an MCP tool (with a JSON Schema description of its parameters). Dropped connections are re-established automatically, busy Editors are retried, `recompile` only returns once compilation finishes, screenshots come back as images, and Bearer tokens are redacted everywhere.
 - 🛠 **One-shot install**: fetches `com.unity.pipeline` from the UPM registry, verifies SHA1, matches built-in patches against the package version, and installs into a running project — fixing upstream packages that do not work out of the box on environments like Unity 2022.
-- 🎮 **Direct command control**: `command` lists or executes every pipeline command inside the Editor, validates parameters locally, and offers `--json` machine-readable output for scripts and CI.
+- 🎮 **Direct command control**: `command` lists or executes every pipeline command inside the Editor, forwarding names and JSON parameters verbatim, with `--json` machine-readable output for scripts and CI.
 - 🔍 **Instance discovery**: `projects` lists every running Editor and its Pipeline service status (port / version / reachability).
 
 ## Quick start
@@ -72,20 +72,20 @@ English and Chinese are supported. Without an explicit setting the language is a
 ### `command` — list / execute pipeline commands
 
 ```bash
-unity_pipeline_cli command                    # list all commands with their parameters
-unity_pipeline_cli command editor_play        # run a parameterless command
-unity_pipeline_cli command eval --code "1+1"  # run with arguments
+unity_pipeline_cli command                                     # list all commands
+unity_pipeline_cli command editor.status                       # run a parameterless command (dotted form)
+unity_pipeline_cli command "asset find" '{"type":"Material"}'  # run with arguments (space name + JSON params)
 ```
+
+The command name is forwarded verbatim and resolved by the server: grouped naming (package 0.9+) accepts both `"asset find"` and `asset.find`, pre-0.9 packages use flat names (e.g. `run_tests`). Parameters are one JSON object string, also forwarded verbatim — validation happens server-side and errors (including `argProblems` details) pass through.
 
 | Argument | Description |
 | :--- | :--- |
-| `<name>` | Command name; omit to list all available commands |
-| `--<param> <value>` | Command parameters; supports `--k=v`, bare `--flag` (treated as `true`), and positionals (mapped onto required parameters in declaration order) |
+| `<name>` | Command name, forwarded verbatim; omit to list all available commands |
+| `[params]` | Command parameters as a JSON object string |
 | `--project-path <path>` | Pin the target when multiple Editors are running |
 | `--timeout <seconds>` | Bounds both the local wait and the server-side execution budget (default 30) |
 | `--json` | Machine-readable output |
-
-Unknown parameters are rejected locally, with the command's parameter reference printed.
 
 ### `mcp` — MCP server (launched by the AI client; do not run by hand)
 
@@ -95,8 +95,8 @@ Features:
 
 - The command catalog maps automatically onto tools; commands that appear after an Editor domain reload are pushed to the client via `tools/list_changed`
 - Stale connections (Editor restart / domain reload) are re-discovered automatically; a busy Editor is retried honoring the server's `Retry-After` (up to 30 attempts); a modal dialog blocking the Editor fails fast and forwards the guidance the Editor published
-- `recompile` polls until compilation settles; the timeout arguments of `run_tests` / `wait_for` are honored end to end
-- `capture_game_view` / `capture_scene_view` are returned as MCP image content (base64 PNG)
+- Any command returning a PNG (the capture family) automatically comes back as MCP image content; any command carrying a `timeout` / `timeout_s` (seconds) argument has it honored end to end
+- Tool names derive from the server catalog (`asset.create`-style dotted full names), unique across groups; the MCP layer hard-codes no command names and works with package 0.6 → 0.9
 - Bearer tokens in any returned text are replaced with `[redacted]`
 - Speaks MCP protocol versions `2024-11-05` / `2025-03-26` / `2025-06-18`
 

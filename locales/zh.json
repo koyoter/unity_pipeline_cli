@@ -1,21 +1,18 @@
 {
   "command.available_commands": "\n📋 可用指令（{0} 条）：\n",
   "command.connected": "🔗 已连接 Unity Editor Pipeline 服务：127.0.0.1:{0}",
-  "command.example": "📖 例如：unity command editor_play",
-  "command.example_with_param": "📖 例如：unity command {0} --{1} value",
+  "command.example": "📖 例如：unity command asset.create '{\"path\":\"Assets/New.mat\"}'",
   "command.execute_failed": "❌ 执行失败：{0}",
   "command.executed": "🎮 已执行：{0}",
-  "command.invalid_parameter": "{0} 的参数无效：没有参数 --{1}",
   "command.no_commands": "\n❌ 未发现任何可用指令",
   "command.no_return_value": "📤 无返回值",
-  "command.parameter_docs": "📖 参数说明：",
   "command.parameters_line": "📋 参数：{0}",
   "command.project": "📁 项目：{0}",
   "command.result_label": "📤 结果：",
   "command.result_line": "📤 结果：{0}",
   "command.server_version": "🌐 服务版本 v{0} · 端口 {1}",
   "command.success": "✅ 成功",
-  "command.usage": "\n💡 用法：unity command <name> [--param value]",
+  "command.usage": "\n💡 用法：unity command <命令名> [参数JSON]",
   "configure.hint_multi_project_ambiguous": "  • 同时开多个项目时，MCP 会因歧义而启动失败。",
   "configure.hint_not_pinned": "提示：以上配置未绑定具体项目。",
   "configure.hint_other_projects_1": "  若需为其他项目也接入 MCP，请再运行一次 `unity install` 或手动复制该条目、",
@@ -166,5 +163,7 @@
   "upgrade.updated": "🎉 已更新到 {0}，重新运行 `unity --version` 可确认。",
   "install.parse_manifest_failed": "解析内置补丁清单（patches/manifest.json）失败",
   "install.manifest_patch_missing": "补丁 `{0}` 在 manifest 里登记了但未内嵌进 exe",
-  "install.no_patch_set_rule": "manifest 里没有匹配包版本 {0} 的补丁集"
+  "install.no_patch_set_rule": "manifest 里没有匹配包版本 {0} 的补丁集",
+  "command.params_parse_failed": "参数 JSON 解析失败：{0}",
+  "command.params_not_object": "参数必须是 JSON 对象（例如 '{\"path\":\"Assets/x.mat\"}'）"
 }

@@ -54,11 +54,13 @@ enum TopCommand {
     /// List pipeline commands, or execute one on a running Unity Editor.
     #[command(alias = "cmd", alias = "request")]
     Command {
-        /// Pipeline command to execute. Omit to list all available commands.
+        /// Pipeline command to run, forwarded verbatim: "asset create" (grouped, quoted),
+        /// "asset.create" (dotted), or a pre-0.9 flat name like "run_tests".
+        /// Omit to list all available commands.
         name: Option<String>,
-        /// Arguments forwarded to the pipeline command (e.g. `--code "1+1"`).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        /// The command's parameters as a JSON object string, forwarded verbatim
+        /// (e.g. '{"path":"Assets/New.mat"}').
+        params: Option<String>,
         /// Target a specific Unity project by absolute path.
         #[arg(long)]
         project_path: Option<String>,
@@ -141,14 +143,14 @@ fn main() -> ExitCode {
         },
         TopCommand::Command {
             name,
-            args,
+            params,
             project_path,
             timeout,
             json,
         } => {
             let result = command::run(command::Options {
                 name,
-                args,
+                params_json: params,
                 project_path,
                 timeout_seconds: timeout,
                 as_json: json,

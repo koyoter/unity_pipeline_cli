@@ -53,19 +53,16 @@ impl ExecBudget {
             server_ms: Some(budget.as_millis().max(1) as u64),
         }
     }
-
-    /// Bound only this client's wait, letting the server apply its own budget.
-    pub fn client_only(client: Duration) -> Self {
-        Self {
-            client,
-            server_ms: None,
-        }
-    }
 }
 
 /// A single pipeline command as reported by `/api/commands`.
 #[derive(Debug, Deserialize)]
 pub struct PipelineCommand {
+    /// The command's full name as the user types it, group first (`asset create`). Present
+    /// only in grouped catalogs (package 0.9+); pre-group catalogs carry only [`Self::name`],
+    /// which there is the full flat name (`run_tests`) and needs no transformation.
+    #[serde(default)]
+    pub command: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
@@ -91,8 +88,6 @@ pub struct PipelineParam {
     pub required: bool,
     #[serde(default, rename = "defaultValue")]
     pub default_value: Option<Value>,
-    #[serde(default)]
-    pub order: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -388,16 +383,18 @@ pub fn is_failed_eval_envelope(result: &Value) -> bool {
         .unwrap_or(false)
 }
 
-/// Some Unity Pipeline endpoints double-encode their payload (return the JSON as a
-/// `Value::String` rather than a `Value::Object`). Normalize so the completion predicates can
-/// always index by field name.
-pub fn normalize_status(status: &Value) -> std::borrow::Cow<'_, Value> {
-    if let Some(s) = status.as_str() {
-        if let Ok(v) = serde_json::from_str::<Value>(s) {
-            return std::borrow::Cow::Owned(v);
-        }
-    }
-    std::borrow::Cow::Borrowed(status)
+/// The MCP tool name for one command: the server's full name with the group separator space
+/// turned into a dot (`asset create` → `asset.create`). The dotted form is accepted by the
+/// server wherever a command is named (verified against a live 0.9 editor), needs no mapping
+/// back, and is unique across groups where the bare `name` (`create`) collides. Pre-group
+/// catalogs have no `command` field; their `name` is already the full command name and is
+/// forwarded unchanged.
+pub fn tool_name(cmd: &PipelineCommand) -> Option<String> {
+    cmd.command
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.replace(' ', "."))
+        .or_else(|| cmd.name.as_deref().filter(|s| !s.is_empty()).map(str::to_owned))
 }
 
 /// The `inputSchema` for one MCP tool. Prefers the schema the server generates for the command

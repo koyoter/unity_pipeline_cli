@@ -1,21 +1,18 @@
 {
   "command.available_commands": "\n📋 Available commands ({0}):\n",
   "command.connected": "🔗 Connected to Unity Editor Pipeline server: 127.0.0.1:{0}",
-  "command.example": "📖 Example: unity command editor_play",
-  "command.example_with_param": "📖 Example: unity command {0} --{1} value",
+  "command.example": "📖 Example: unity command asset.create '{\"path\":\"Assets/New.mat\"}'",
   "command.execute_failed": "❌ Command failed: {0}",
   "command.executed": "🎮 Executed: {0}",
-  "command.invalid_parameter": "Invalid parameters for {0}: unknown parameter --{1}",
   "command.no_commands": "\n❌ No commands available",
   "command.no_return_value": "📤 No return value",
-  "command.parameter_docs": "📖 Parameters:",
   "command.parameters_line": "📋 Parameters: {0}",
   "command.project": "📁 Project: {0}",
   "command.result_label": "📤 Result:",
   "command.result_line": "📤 Result: {0}",
   "command.server_version": "🌐 Server version v{0} · port {1}",
   "command.success": "✅ Success",
-  "command.usage": "\n💡 Usage: unity command <name> [--param value]",
+  "command.usage": "\n💡 Usage: unity command <name> [params JSON]",
   "configure.hint_multi_project_ambiguous": "  • With multiple projects open at the same time, MCP fails to start due to ambiguity.",
   "configure.hint_not_pinned": "Hint: the config above is not bound to a specific project.",
   "configure.hint_other_projects_1": "  To connect other projects to MCP as well, run `unity install` again, or copy this entry manually,",
@@ -166,5 +163,7 @@
   "upgrade.updated": "🎉 Updated to {0}. Run `unity --version` again to confirm.",
   "install.parse_manifest_failed": "Failed to parse the embedded patch manifest (patches/manifest.json)",
   "install.manifest_patch_missing": "Patch `{0}` is listed in the manifest but not embedded in the exe",
-  "install.no_patch_set_rule": "No patch set in the manifest matches package version {0}"
+  "install.no_patch_set_rule": "No patch set in the manifest matches package version {0}",
+  "command.params_parse_failed": "Failed to parse the parameters JSON: {0}",
+  "command.params_not_object": "Parameters must be a JSON object (e.g. '{\"path\":\"Assets/x.mat\"}')"
 }
