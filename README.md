@@ -22,8 +22,8 @@
 | 增强点 | 官方 CLI | 本工具 |
 | :--- | :--- | :--- |
 | 🤖 **MCP 桥（主打）** | ❌ 无 MCP 形态 | Editor 与 Player 的指令目录自动暴露为 MCP 工具——纯转发零硬编码，包 0.6 → 0.9 全兼容，AI 客户端即插即用 |
-| 📱 **Android Mono 动态执行** | ❌ 上游裁掉 Android 的 Roslyn 路径，`script.eval` 报 "Platform Not Supported" | ✅ 内置补丁打通：AssetManager 流式引用 + 门槛起用，真机验收 `return 1+2` → 3、场景对象实查可用 |
-| 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁（先 dry-run 再应用）稳定支持 Unity 2022.3 |
+| 📱 **Android Mono 动态执行** | ❌ 上游裁掉 Android 的 Roslyn 路径，`script.eval` 报 "Platform Not Supported" | ✅ 内置补丁打通 |
+| 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁稳定支持 Unity 2022.3 |
 | 🎮 **Player 调试全托管** | 📄 `--runtime`/`--runtime-path` 仅文档约定 | ✅ 官方同款 flag 全实现，另补 `--adb <包名>`：run-as 读描述符 + adb forward + 断线/应用重启自愈，`command` 与 MCP 共用 |
 | 🛟 **调试韧性** | ❌ 连接断即失效 | ✅ Player 崩溃后 MCP 连接仍可用（工具表缓存 + `player_status`/`player_log_read` 本地工具）；Player 晚于连接启动时自动推送 `tools/list_changed` |
 | 🛠 **带补丁的一键安装** | ❌ 无补丁机制 | ✅ registry 拉取 + SHA1 校验 + 按版本自动匹配补丁集 |
