@@ -24,7 +24,7 @@
 | 🤖 **MCP 桥（主打）** | ❌ 无 MCP 形态 | Editor 与 Player 的指令目录自动暴露为 MCP 工具——纯转发零硬编码，包 0.6 → 0.9 全兼容，AI 客户端即插即用 |
 | 📱 **Android Mono 动态执行** | ❌ 上游裁掉 Android 的 Roslyn 路径，`script.eval` 报 "Platform Not Supported" | ✅ 内置补丁打通 |
 | 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁稳定支持 Unity 2022.3 |
-| 🎮 **Player 调试全托管** | ✅ 桌面：`--runtime`/`--runtime-path` | ✅ 官方同款 flag 之外补 `--adb <包名>`：run-as 读描述符 + adb forward + 断线/应用重启自愈，`command` 与 MCP 共用 |
+| 🎮 **Player 调试全托管** | ✅ 桌面：`--runtime`/`--runtime-path`；Android 需自行处理 adb 转发、获取调试端口与令牌 | ✅ 官方同款 flag 之外补 `--adb <包名>`：run-as 读描述符（端口+令牌）→ adb forward → 断线/应用重启自愈，**零手工步骤**，`command` 与 MCP 共用 |
 | 🛟 **调试韧性** | ❌ 连接断即失效 | ✅ Player 崩溃后 MCP 连接仍可用（工具表缓存 + `player_status`/`player_log_read` 本地工具）；Player 晚于连接启动时自动推送 `tools/list_changed` |
 
 ## 快速上手
