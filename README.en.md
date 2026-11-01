@@ -4,20 +4,18 @@
 
 **Let AI agents drive a running Unity Editor directly.** `unity_pipeline_cli` bridges the local HTTP service exposed by the `com.unity.pipeline` package inside the Editor into MCP tools, ready to plug into AI clients such as Claude Desktop. It also provides manual command-line control, Editor instance discovery, and one-shot patched installation.
 
-This project is a streamlined, optimized take on the **Pipeline-package interaction** slice of the official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli): the official CLI installs Editors and creates projects, while controlling the Editor itself requires the separate `com.unity.pipeline` package — this tool packs that slice into a single Rust binary with no heavyweight dependencies (Windows 10+ / macOS, Intel and Apple Silicon).
-
-**The goal is to support Unity versions beyond the official Unity CLI**: the upstream `com.unity.pipeline` package does not work out of the box on older Editors; built-in patches bridge the gap, and **Unity 2022.3** is already stably supported.
+A single self-contained Rust binary (Windows 10+ / macOS, Intel and Apple Silicon). The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) installs Editors and creates projects; controlling the Editor itself requires the separate `com.unity.pipeline` package — that slice is what this tool does and enhances, with built-in patches bridging upstream packages that do not work out of the box on older Editors. **Unity 2022.3** is already stably supported (full positioning in [Relation to the official Unity CLI](#relation-to-the-official-unity-cli)).
 
 ## Core capabilities
 
-- 🤖 **AI bridging (MCP, the headline)**: every pipeline command registered inside the Editor is automatically exposed as an MCP tool (with a JSON Schema description of its parameters). Dropped connections are re-established automatically, busy Editors are retried, `recompile` only returns once compilation finishes, screenshots come back as images, and Bearer tokens are redacted everywhere.
+- 🤖 **AI bridging (MCP, the headline)**: every pipeline command registered inside the Editor is automatically exposed as an MCP tool (with a JSON Schema description of its parameters). Dropped connections are re-established automatically, busy Editors are retried, screenshots come back as images, and Bearer tokens are redacted everywhere.
 - 🛠 **One-shot install**: fetches `com.unity.pipeline` from the UPM registry, verifies SHA1, matches built-in patches against the package version, and installs into a running project — fixing upstream packages that do not work out of the box on environments like Unity 2022.
 - 🎮 **Direct command control**: `command` lists or executes every pipeline command inside the Editor, forwarding names and JSON parameters verbatim, with `--json` machine-readable output for scripts and CI.
 - 🔍 **Instance discovery**: `projects` lists every running Editor and its Pipeline service status (port / version / reachability).
 
 ## What goes beyond the official CLI
 
-The official `unity` CLI covers Editor installation, project creation, and basic Pipeline-package interaction; this tool adds capabilities the official one does not have (or only documents as conventions):
+This tool adds capabilities the official CLI does not have (or only documents as conventions) on top of the same Pipeline-interaction slice:
 
 | Enhancement | Official CLI | This tool |
 | :--- | :--- | :--- |
@@ -36,11 +34,9 @@ The official `unity` CLI covers Editor installation, project creation, and basic
 
 ### Getting the binary
 
-Download the archive for your platform from [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) (filenames carry the platform tag; if unsure about your Mac's architecture, pick universal) and extract it — a single self-contained binary, no installation.
+Download the archive for your platform from [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) (filenames carry the platform tag; if unsure about your Mac's architecture, pick universal) and extract it — a single self-contained binary, no installation. You can also build it yourself (see [Build & release](#build--release)).
 
-Already have an older build? Run `unity upgrade` to self-update — no manual download needed (see the [command reference](#command-reference)).
-
-Building yourself: `cargo build --release`, or the root scripts (`build-release.bat` / `./build-release.sh universal`).
+Already have an older build? Run `unity_pipeline_cli upgrade` to self-update — no manual download needed (see the [command reference](#command-reference)).
 
 ### One command to wire it up
 
@@ -48,7 +44,7 @@ Building yourself: `cargo build --release`, or the root scripts (`build-release.
 unity_pipeline_cli install
 ```
 
-Pick a running Editor and a package version; the tool downloads, patches and installs the package automatically, then prints an MCP config snippet bound to that project — paste it into Claude Desktop / Antigravity etc., restart the client, and the model can list and invoke every pipeline command inside the Editor.
+Pick a running Editor and a package version; everything else is automatic — download, patching, installation — and the tool prints an MCP config snippet bound to that project. Paste it into Claude Desktop / Antigravity etc., restart the client, and the model can list and invoke every pipeline command inside the Editor.
 
 Want a manual look first? `unity_pipeline_cli projects`, `unity_pipeline_cli command`.
 
@@ -64,22 +60,18 @@ Interactively pick a running Editor and a package version, then it automatically
 | `--latest` | Install the registry's `latest` directly |
 | `--keep-cache` | Reuse the tgz already in `downloads/` instead of re-downloading |
 
-### `projects` — inspect running Editors
+### `mcp` — MCP server (launched by the AI client; do not run by hand)
 
-Lists project name, PID, Unity version, installed Pipeline package version, server port and reachability. `--json` emits machine-readable JSON.
+Speaks JSON-RPC over stdio and exposes the pipeline command catalog as MCP tools. `--project-path <path>` pins a specific project — with multiple Editors running, each entry must be pinned, otherwise startup fails due to ambiguity; `--runtime` / `--runtime-path` / `--adb` target a running Player instead (see [Debugging a built program](#debugging-a-built-program-player)).
 
-### `upgrade` — self-update
+Features:
 
-Automatically checks GitHub for a new version: when one exists, it shows the release notes and, after your confirmation, downloads (with a progress bar) and replaces the running binary — no manual download needed.
-
-### `language` — show / switch UI language
-
-```bash
-unity_pipeline_cli language      # show the current language
-unity_pipeline_cli language zh   # switch to Chinese (en / zh)
-```
-
-English and Chinese are supported. Without an explicit setting the language is auto-detected in this order: the setting saved by this command → `LANGUAGE` / `LC_ALL` / `LANG` environment variables → OS UI language (Windows API) → English. The setting is stored in the platform config directory (`%APPDATA%\unity_pipeline_cli\language.txt` on Windows).
+- The command catalog maps automatically onto tools; commands that appear after an Editor domain reload are pushed to the client via `tools/list_changed`
+- Stale connections (Editor restart / domain reload) are re-discovered automatically; a busy Editor is retried honoring the server's `Retry-After` (up to 30 attempts); a modal dialog blocking the Editor fails fast and forwards the guidance the Editor published
+- Any command returning a PNG (the capture family) automatically comes back as MCP image content; any command carrying a `timeout` / `timeout_s` (seconds) argument has it honored end to end
+- Tool names derive from the server catalog (`asset.create`-style dotted full names), unique across groups; the MCP layer hard-codes no command names and works with package 0.6 → 0.9
+- Bearer tokens in any returned text are replaced with `[redacted]`
+- Speaks MCP protocol versions `2024-11-05` / `2025-03-26` / `2025-06-18`
 
 ### `command` — list / execute pipeline commands
 
@@ -100,19 +92,6 @@ The command name is forwarded verbatim and resolved by the server: grouped namin
 | `--timeout <seconds>` | Bounds both the local wait and the server-side execution budget (default 30) |
 | `--json` | Machine-readable output |
 
-### `mcp` — MCP server (launched by the AI client; do not run by hand)
-
-Speaks JSON-RPC over stdio and exposes the pipeline command catalog as MCP tools. `--project-path <path>` pins a specific project — with multiple Editors running, each entry must be pinned, otherwise startup fails due to ambiguity; `--runtime` / `--runtime-path` / `--adb` target a running Player instead (see [Debugging a built program](#debugging-a-built-program-player)).
-
-Features:
-
-- The command catalog maps automatically onto tools; commands that appear after an Editor domain reload are pushed to the client via `tools/list_changed`
-- Stale connections (Editor restart / domain reload) are re-discovered automatically; a busy Editor is retried honoring the server's `Retry-After` (up to 30 attempts); a modal dialog blocking the Editor fails fast and forwards the guidance the Editor published
-- Any command returning a PNG (the capture family) automatically comes back as MCP image content; any command carrying a `timeout` / `timeout_s` (seconds) argument has it honored end to end
-- Tool names derive from the server catalog (`asset.create`-style dotted full names), unique across groups; the MCP layer hard-codes no command names and works with package 0.6 → 0.9
-- Bearer tokens in any returned text are replaced with `[redacted]`
-- Speaks MCP protocol versions `2024-11-05` / `2025-03-26` / `2025-06-18`
-
 ### `configure mcp` — print a client config snippet
 
 ```bash
@@ -124,15 +103,28 @@ unity_pipeline_cli configure mcp --adb com.acme.mygame      # Android Player sec
 
 Bare `configure mcp` prints all three sections at once — **Editor / desktop Player / Android Player** — each a standalone paste-ready `mcpServers` entry (`--trace` attaches a `UNITY_MCP_TRACE` protocol log to the entries). See [Debugging a built program](#debugging-a-built-program-player) for what each form does.
 
+### `projects` — inspect running Editors
+
+Lists project name, PID, Unity version, installed Pipeline package version, server port and reachability. `--json` emits machine-readable JSON.
+
+### `upgrade` — self-update
+
+Automatically checks GitHub for a new version: when one exists, it shows the release notes and, after your confirmation, downloads (with a progress bar) and replaces the running binary — no manual download needed.
+
+### `language` — show / switch UI language
+
+```bash
+unity_pipeline_cli language      # show the current language
+unity_pipeline_cli language zh   # switch to Chinese (en / zh)
+```
+
+English and Chinese are supported. Without an explicit setting the language is auto-detected in this order: the setting saved by this command → `LANGUAGE` / `LC_ALL` / `LANG` environment variables → OS UI language (Windows API) → English. The setting is stored in the platform config directory (`%APPDATA%\unity_pipeline_cli\language.txt` on Windows).
+
 ## Debugging a built program (Player)
 
-`--runtime` (by process/executable name, matching the official CLI), `--runtime-path` (by where `.unity-pipeline-runtime-port` lives: Windows — the build dir; macOS — the `.app` bundle) target a local desktop Player; `--adb <package>` (plus `--adb-serial <serial>` with several devices) targets the Player on Android — fully managed by the CLI: the descriptor on the device is read via run-as (port + token), then an `adb forward` exposes it at 127.0.0.1, re-established automatically after disconnects / app restarts. `command` and `mcp` share this target selection.
+**Prerequisite: to use pipeline capabilities in a built program, enable it in the Editor FIRST, then build** — whether the runtime pipeline is compiled in is decided at **build time**; enabling it afterwards has no effect on an already-built package. To enable: in the Editor, Project Settings → Pipeline → Runtime → check `enableInDevelopmentBuilds` (or enable it via this tool's `settings.runtime_pipeline set` → recompile), then rebuild (a development build for debugging). For Android on-device debugging — development-build options, launch self-check, and the common pitfalls — see [Android troubleshooting quick reference](#android-troubleshooting-quick-reference).
 
-**Prerequisite: to use pipeline capabilities in a built program, enable it in the Editor FIRST, then build** — whether the runtime pipeline is compiled in is decided at **build time**; enabling it afterwards has no effect on an already-built package (the most common pitfall in on-device debugging):
-
-1. In the Editor: Project Settings → Pipeline → Runtime → check `enableInDevelopmentBuilds` (or enable it via this tool's `settings.runtime_pipeline set` → recompile)
-2. Rebuild as a development build (with this tool's `build.run`, pass `options: ["Development", "AllowDebugging"]` — otherwise the package is not debuggable)
-3. Self-check: after launching the app, `adb logcat -d -s Unity` should show "Runtime server started successfully on port N"; if not, the runtime pipeline never made it in (evidence and fixes in [Android troubleshooting quick reference](#android-troubleshooting-quick-reference))
+Which program is targeted is decided by the target selection shared by `command` and `mcp`: with no flag, the Editor; `--runtime` (by process/executable name, matching the official CLI), `--runtime-path` (by where `.unity-pipeline-runtime-port` lives: Windows — the build dir; macOS — the `.app` bundle) target a local desktop Player; `--adb <package>` (plus `--adb-serial <serial>` with several devices) targets the Player on Android — fully managed by the CLI: the descriptor on the device is read via run-as (port + token), then an `adb forward` exposes it at 127.0.0.1, re-established automatically after disconnects / app restarts.
 
 serverInfo carries the target label (e.g. `unity-mcp@MyGame`), so multiple agent-side connections never blur together.
 
@@ -149,6 +141,9 @@ The player's runtime server exposes 18 runtime commands, but **capability tiers 
 Prefer `script.methodreload` for dynamic logic (works on every backend); `script.eval` is usable on desktop Mono and — via this tool's patch — Android Mono dev builds.
 
 ### Android troubleshooting quick reference
+
+- Rebuild as a development build (with this tool's `build.run`, pass `options: ["Development", "AllowDebugging"]` — otherwise the package is not debuggable)
+- Self-check: after launching the app, `adb logcat -d -s Unity` should show "Runtime server started successfully on port N"; if not, the runtime pipeline never made it in
 
 The two most common build-side pitfalls when testing on a device (symptom → evidence → fix):
 
@@ -200,4 +195,4 @@ build-release.bat                  # Windows: one-shot build into releases/
 
 ### Relation to the official Unity CLI
 
-The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) covers Editor installation, project creation, version-control setup, and more; controlling the Editor itself requires the separate `com.unity.pipeline` package. This project does — and enhances — exactly that slice (patched one-shot install, instance discovery, command execution, MCP bridging); it does not install Editors, create projects, or integrate Unity accounts / Cloud. For the concrete list of enhancements over the official CLI, see [What goes beyond the official CLI](#what-goes-beyond-the-official-cli). Version coverage aims beyond the official CLI: built-in patches make the upstream package run on Editors it does not support out of the box — **Unity 2022.3** is already stably supported.
+The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) covers Editor installation, project creation, version-control setup, and more; controlling the Editor itself requires the separate `com.unity.pipeline` package. This project does — and enhances — exactly that slice (patched one-shot install, instance discovery, command execution, MCP bridging); it does not install Editors, create projects, or integrate Unity accounts / Cloud. For the concrete list of enhancements over the official CLI, see [What goes beyond the official CLI](#what-goes-beyond-the-official-cli).

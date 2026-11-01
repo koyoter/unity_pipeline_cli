@@ -4,9 +4,7 @@
 
 **让 AI Agent 直接操控正在运行的 Unity Editor。** `unity_pipeline_cli` 把 `com.unity.pipeline` 包在 Editor 内提供的本地 HTTP 服务桥接成 MCP 工具，Claude Desktop 等 AI 客户端即插即用；同时提供命令行手动控制、Editor 实例发现与带补丁的一键安装。
 
-本工程是官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 中 **Pipeline 包交互环节**的精简优化版：官方 CLI 负责安装编辑器、创建项目，而控制 Editor 本身需要单独的 `com.unity.pipeline` 包——本工具把这一环做成一个零重依赖的 Rust 单二进制（Windows 10+ / macOS，Intel 与 Apple Silicon）。
-
-**以支持官方 Unity CLI 之外的 Unity 版本为目标**：上游 `com.unity.pipeline` 包在旧版 Editor 上开箱不可用，本工具以内置补丁打通，目前已稳定支持 **Unity 2022.3**。
+单文件 Rust 二进制（Windows 10+ / macOS，Intel 与 Apple Silicon），零重依赖。官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责安装编辑器、创建项目；控制 Editor 本身所需的 `com.unity.pipeline` 包这一环由本工具完成并增强——内置补丁打通上游包开箱不可用的旧版 Editor，已稳定支持 **Unity 2022.3**（定位全貌见[与官方 Unity CLI 的关系](#与官方-unity-cli-的关系)）。
 
 ## 核心能力
 
@@ -17,7 +15,7 @@
 
 ## 超出官方 CLI 的增强
 
-官方 `unity` CLI 覆盖编辑器安装、项目创建与 Pipeline 包的基础交互；本工具在同一个环节上做了官方没有（或只停留在文档约定）的能力：
+本工具在官方 CLI 的 Pipeline 交互环节上，做了官方没有（或只停留在文档约定）的能力：
 
 | 增强点 | 官方 CLI | 本工具 |
 | :--- | :--- | :--- |
@@ -36,11 +34,9 @@
 
 ### 获取
 
-从 [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) 下载对应平台的压缩包（文件名含平台标识，拿不准 Mac 架构就选 universal），解压即用——单文件、免安装。
+从 [GitHub Releases](https://github.com/koyoter/unity_pipeline_cli/releases/latest) 下载对应平台的压缩包（文件名含平台标识，拿不准 Mac 架构就选 universal），解压即用——单文件、免安装。也可自行编译（见[构建发布](#构建发布)）。
 
-已装了旧版本？直接 `unity upgrade` 自更新，无需手动下载（详见[命令参考](#命令参考)）。
-
-自行编译：`cargo build --release`，或用根目录脚本（`build-release.bat` / `./build-release.sh universal`）。
+已装了旧版本？直接 `unity_pipeline_cli upgrade` 自更新，无需手动下载（详见[命令参考](#命令参考)）。
 
 ### 一条命令接入
 
@@ -48,7 +44,7 @@
 unity_pipeline_cli install
 ```
 
-选好运行中的 Editor 与包版本，工具会自动完成下载、打补丁、装入项目，并在结束时打印已绑定该项目的 MCP 配置片段——把它粘贴到 Claude Desktop / Antigravity 等客户端，重启客户端，模型即可列出并调用 Editor 内的全部管线指令。
+选好运行中的 Editor 与包版本，其余全自动：下载、打补丁、装入项目，结束时打印已绑定该项目的 MCP 配置片段——把它粘贴到 Claude Desktop / Antigravity 等客户端，重启客户端，模型即可列出并调用 Editor 内的全部管线指令。
 
 想先手动看看状态或指令？`unity_pipeline_cli projects`、`unity_pipeline_cli command`。
 
@@ -64,22 +60,18 @@ unity_pipeline_cli install
 | `--latest` | 直接安装 registry 的 `latest` |
 | `--keep-cache` | 复用 `downloads/` 中已下载的 tgz，不重新下载 |
 
-### `projects` — 查看运行中的 Editor
+### `mcp` — MCP 服务端（由 AI 客户端拉起，勿手动运行）
 
-列出项目名、PID、Unity 版本、Pipeline 包版本、服务端口与可达性。`--json` 输出机器可读 JSON。
+在 stdio 上运行 JSON-RPC，把管线指令目录暴露为 MCP 工具。`--project-path <路径>` 可绑定具体项目——多个 Editor 并存时必须分别绑定，否则会因歧义启动失败；`--runtime` / `--runtime-path` / `--adb` 则指向运行中的 Player（见[调试打包后的程序](#调试打包后的程序-player)）。
 
-### `upgrade` — 自更新
+特性：
 
-自动检测 GitHub 上的新版本：有更新时展示更新内容，确认后自动下载（带进度条）并替换当前程序，无需手动下载安装。
-
-### `language` — 查看 / 切换界面语言
-
-```bash
-unity_pipeline_cli language      # 查看当前语言
-unity_pipeline_cli language zh   # 切换到中文（en / zh）
-```
-
-支持英文与中文。不设置时按以下顺序自动判定：本命令保存的设置 → `LANGUAGE` / `LC_ALL` / `LANG` 环境变量 → 操作系统界面语言（Windows API）→ 英文。设置保存在平台配置目录（Windows 为 `%APPDATA%\unity_pipeline_cli\language.txt`）。
+- 指令目录自动映射为 tools；Editor 域重载后新增的指令会通过 `tools/list_changed` 通知客户端刷新
+- 连接失效（Editor 重启 / 域重载）自动重新发现；Editor 忙碌时按服务端 `Retry-After` 自动重试（至多 30 次）；被模态对话框阻塞时直接报错并转发 Editor 给出的提示
+- 任何返回 PNG 的指令（截图类）自动以 MCP 图片内容返回（base64）；任何自带 `timeout` / `timeout_s`（秒）参数的指令，该超时端到端生效
+- 工具名与命令目录同源（`asset.create` 一类点号全名），跨组唯一；MCP 层零硬编码命令名，包 0.6 → 0.9 全兼容
+- 所有返回文本中的 Bearer Token 一律替换为 `[redacted]`
+- 兼容 MCP 协议版本 `2024-11-05` / `2025-03-26` / `2025-06-18`
 
 ### `command` — 列出 / 执行管线指令
 
@@ -100,19 +92,6 @@ unity_pipeline_cli command "asset find" '{"type":"Material"}'  # 带参执行（
 | `--timeout <秒>` | 同时限定本地等待与服务端执行预算（默认 30） |
 | `--json` | 机器可读输出 |
 
-### `mcp` — MCP 服务端（由 AI 客户端拉起，勿手动运行）
-
-在 stdio 上运行 JSON-RPC，把管线指令目录暴露为 MCP 工具。`--project-path <路径>` 可绑定具体项目——多个 Editor 并存时必须分别绑定，否则会因歧义启动失败；`--runtime` / `--runtime-path` / `--adb` 则指向运行中的 Player（见[调试打包后的程序](#调试打包后的程序-player)）。
-
-特性：
-
-- 指令目录自动映射为 tools；Editor 域重载后新增的指令会通过 `tools/list_changed` 通知客户端刷新
-- 连接失效（Editor 重启 / 域重载）自动重新发现；Editor 忙碌时按服务端 `Retry-After` 自动重试（至多 30 次）；被模态对话框阻塞时直接报错并转发 Editor 给出的提示
-- 任何返回 PNG 的指令（截图类）自动以 MCP 图片内容返回（base64）；任何自带 `timeout` / `timeout_s`（秒）参数的指令，该超时端到端生效
-- 工具名与命令目录同源（`asset.create` 一类点号全名），跨组唯一；MCP 层零硬编码命令名，包 0.6 → 0.9 全兼容
-- 所有返回文本中的 Bearer Token 一律替换为 `[redacted]`
-- 兼容 MCP 协议版本 `2024-11-05` / `2025-03-26` / `2025-06-18`
-
 ### `configure mcp` — 生成客户端配置片段
 
 ```bash
@@ -124,15 +103,28 @@ unity_pipeline_cli configure mcp --adb com.acme.mygame      # 只打 Android Pla
 
 不带 flag 一次打印三节——**编辑器 / 桌面 Player / Android Player**——每节都是可直接粘贴的独立 `mcpServers` 条目（`--trace` 给条目附上 `UNITY_MCP_TRACE` 协议日志）。三节的具体形态与差异见[调试打包后的程序](#调试打包后的程序-player)。
 
+### `projects` — 查看运行中的 Editor
+
+列出项目名、PID、Unity 版本、Pipeline 包版本、服务端口与可达性。`--json` 输出机器可读 JSON。
+
+### `upgrade` — 自更新
+
+自动检测 GitHub 上的新版本：有更新时展示更新内容，确认后自动下载（带进度条）并替换当前程序，无需手动下载安装。
+
+### `language` — 查看 / 切换界面语言
+
+```bash
+unity_pipeline_cli language      # 查看当前语言
+unity_pipeline_cli language zh   # 切换到中文（en / zh）
+```
+
+支持英文与中文。不设置时按以下顺序自动判定：本命令保存的设置 → `LANGUAGE` / `LC_ALL` / `LANG` 环境变量 → 操作系统界面语言（Windows API）→ 英文。设置保存在平台配置目录（Windows 为 `%APPDATA%\unity_pipeline_cli\language.txt`）。
+
 ## 调试打包后的程序（Player）
 
-`--runtime`（按进程/可执行名，官方 CLI 同款）、`--runtime-path`（按 `.unity-pipeline-runtime-port` 所在位置：Windows 传构建目录、macOS 传 `.app` 包路径）指向本地桌面 Player；`--adb <包名>`（多设备加 `--adb-serial <serial>`）指向 Android 上的 Player——CLI 全托管：run-as 读设备上的描述符（port + token）→ `adb forward` 转发到 127.0.0.1，断线 / 应用重启后自动重建。`command` 与 `mcp` 共用这套目标选择。
+**前提：想打包后使用 pipeline 能力，必须先在编辑器里启用，再打包**——runtime pipeline 是否编进包，在**构建期**就定了；打包之后才开启，对已打出的包无效。启用：编辑器里 Project Settings → Pipeline → Runtime → 勾选 `enableInDevelopmentBuilds`（或经本工具 `settings.runtime_pipeline set` 开启 → recompile），再重新打包（调试用途选开发构建）。Android 真机联调的开发构建选项、启动自检与常见坑见[Android 排障速查](#android-排障速查)。
 
-**前提：想打包后使用 pipeline 能力，必须先在编辑器里启用，再打包**——runtime pipeline 是否编进包，在**构建期**就定了；打包之后才开启，对已打出的包无效（这是真机联调最常见的坑）：
-
-1. Editor 里 Project Settings → Pipeline → Runtime → 勾选 `enableInDevelopmentBuilds`（或经本工具 `settings.runtime_pipeline set` 开启 → recompile）
-2. 重新打包：开发构建（用本工具 `build.run` 时记得 `options: ["Development", "AllowDebugging"]`，否则包不可调试）
-3. 自检：启动应用后 `adb logcat -d -s Unity` 应出现 "Runtime server started successfully on port N"；没出现就是没编进去（判据与修复见[Android 排障速查](#android-排障速查)）
+指向哪个程序由 `command` 与 `mcp` 共用的目标选择决定：省略 flag 即 Editor；`--runtime`（按进程/可执行名，官方 CLI 同款）、`--runtime-path`（按 `.unity-pipeline-runtime-port` 所在位置：Windows 传构建目录、macOS 传 `.app` 包路径）指向本地桌面 Player；`--adb <包名>`（多设备加 `--adb-serial <serial>`）指向 Android 上的 Player——CLI 全托管：run-as 读设备上的描述符（port + token）→ `adb forward` 转发到 127.0.0.1，断线 / 应用重启后自动重建。
 
 serverInfo 名字带目标标识（如 `unity-mcp@MyGame`），agent 侧多个连接不会混。
 
@@ -149,6 +141,9 @@ Player 端 runtime server 暴露 18 条 runtime 指令，但**能力按打包时
 调动态逻辑优先走 `script.methodreload`（全后端可用）；`script.eval` 在桌面 Mono 与 Android Mono dev 构建可用（Android 依赖本工具补丁）。
 
 ### Android 排障速查
+
+- 重新打包：开发构建（用本工具 `build.run` 时记得 `options: ["Development", "AllowDebugging"]`，否则包不可调试）
+- 自检：启动应用后 `adb logcat -d -s Unity` 应出现 "Runtime server started successfully on port N"；没出现就是没编进去
 
 真机联调最常见的两个构建侧坑（现象 → 判据 → 修复）：
 
@@ -200,4 +195,4 @@ build-release.bat                  # Windows 一键产出 releases/
 
 ### 与官方 Unity CLI 的关系
 
-官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责编辑器安装、项目创建、版本控制接入等；控制 Editor 本身需另装 `com.unity.pipeline` 包。本工程只做并增强这一环（带补丁的一键安装、实例发现、指令执行、MCP 桥接）；不包含编辑器安装、项目创建、Unity 账号 / Cloud 集成。相对官方的具体增强清单见[超出官方 CLI 的增强](#超出官方-cli-的增强)。版本覆盖以官方 CLI 之外为目标：内置补丁让上游包跑在它开箱不支持的 Editor 上，目前已稳定支持 **Unity 2022.3**。
+官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责编辑器安装、项目创建、版本控制接入等；控制 Editor 本身需另装 `com.unity.pipeline` 包。本工程只做并增强这一环（带补丁的一键安装、实例发现、指令执行、MCP 桥接）；不包含编辑器安装、项目创建、Unity 账号 / Cloud 集成。相对官方的具体增强清单见[超出官方 CLI 的增强](#超出官方-cli-的增强)。
