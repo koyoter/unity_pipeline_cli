@@ -1,5 +1,5 @@
 diff --git a/Runtime/Plugins/CodeAnalysis/UnityPipeline.Microsoft.CodeAnalysis.dll.meta b/Runtime/Plugins/CodeAnalysis/UnityPipeline.Microsoft.CodeAnalysis.dll.meta
-index ed1ad79..c05668a 100644
+index 0af99ad..968351f 100644
 --- a/Runtime/Plugins/CodeAnalysis/UnityPipeline.Microsoft.CodeAnalysis.dll.meta
 +++ b/Runtime/Plugins/CodeAnalysis/UnityPipeline.Microsoft.CodeAnalysis.dll.meta
 @@ -2,7 +2,7 @@ fileFormatVersion: 2
@@ -11,7 +11,7 @@ index ed1ad79..c05668a 100644
    iconMap: {}
    executionOrder: {}
    defineConstraints:
-@@ -12,35 +12,77 @@ PluginImporter:
+@@ -15,35 +15,77 @@ PluginImporter:
    isExplicitlyReferenced: 0
    validateReferences: 1
    platformData:
@@ -19,22 +19,22 @@ index ed1ad79..c05668a 100644
 +  - first:
 +      : Any
 +    second:
-+      enabled: 0
++      enabled: 1
 +      settings:
-+        Exclude Android: 1
++        Exclude Android: 0
 +        Exclude Editor: 0
-+        Exclude Linux64: 1
-+        Exclude OSXUniversal: 1
-+        Exclude Win: 1
-+        Exclude Win64: 1
-+        Exclude iOS: 1
++        Exclude Linux64: 0
++        Exclude OSXUniversal: 0
++        Exclude Win: 0
++        Exclude Win64: 0
++        Exclude iOS: 0
 +  - first:
 +      Android: Android
 +    second:
-+      enabled: 0
++      enabled: 1
 +      settings:
 +        AndroidSharedLibraryType: Executable
-+        CPU: ARMv7
++        CPU: AnyCPU
 +  - first:
 +      Any: 
 +    second:
@@ -50,54 +50,47 @@ index ed1ad79..c05668a 100644
          DefaultValueInitialized: true
          OS: AnyOS
 -    Linux64:
--      enabled: 1
 +  - first:
 +      Standalone: Linux64
 +    second:
-+      enabled: 0
+       enabled: 1
        settings:
--        CPU: AnyCPU
+         CPU: AnyCPU
 -    OSXUniversal:
--      enabled: 1
-+        CPU: None
 +  - first:
 +      Standalone: OSXUniversal
 +    second:
-+      enabled: 0
+       enabled: 1
        settings:
--        CPU: AnyCPU
+         CPU: AnyCPU
 -    Win:
--      enabled: 1
-+        CPU: None
 +  - first:
 +      Standalone: Win
 +    second:
-+      enabled: 0
+       enabled: 1
        settings:
--        CPU: AnyCPU
+         CPU: AnyCPU
 -    Win64:
--      enabled: 1
-+        CPU: None
 +  - first:
 +      Standalone: Win64
 +    second:
-+      enabled: 0
-+      settings:
-+        CPU: None
-+  - first:
-+      Windows Store Apps: WindowsStoreApps
-+    second:
-+      enabled: 0
+       enabled: 1
        settings:
          CPU: AnyCPU
 -    WindowsStoreApps:
 +  - first:
-+      iPhone: iOS
++      Windows Store Apps: WindowsStoreApps
 +    second:
        enabled: 0
        settings:
-+        AddToEmbeddedBinaries: false
          CPU: AnyCPU
++  - first:
++      iPhone: iOS
++    second:
++      enabled: 1
++      settings:
++        AddToEmbeddedBinaries: false
++        CPU: AnyCPU
 +        CompileFlags: 
 +        FrameworkDependencies: 
    userData: 
