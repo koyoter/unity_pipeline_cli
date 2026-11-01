@@ -23,6 +23,12 @@ pub struct Target {
     /// Guidance the Editor published about itself on its port descriptor (see
     /// [`crate::editor::PortDescriptor::info`]).
     pub info: Option<String>,
+    /// True when this target is a player build (runtime server), so offline errors can say
+    /// "start the player" instead of editor guidance.
+    pub is_runtime: bool,
+    /// True when the player is reached over an adb forward (Android) — offline errors and
+    /// local tools (logcat) then speak adb, not desktop Player.log.
+    pub is_adb: bool,
 }
 
 /// Slack added to this client's own wait so that a command outliving its budget fails with the
@@ -260,6 +266,8 @@ pub fn find_target(project_path: Option<&str>) -> Result<Target> {
         eval_token: descriptor.eval_token,
         pid: descriptor.pid,
         info: descriptor.info,
+        is_runtime: false,
+        is_adb: false,
     })
 }
 
@@ -306,6 +314,20 @@ fn pick_single_running_editor() -> Result<(PathBuf, PortDescriptor)> {
 /// Ensure the resolved Pipeline server actually answers.
 pub fn ensure_reachable(target: &Target) -> Result<()> {
     if !probe_pipeline(target.port, target.eval_token.as_deref()) {
+        if target.is_adb {
+            return Err(anyhow!(
+                "Android app is not answering via adb forward at 127.0.0.1:{} (device path {}). Launch the app on the device, make sure USB debugging is connected, then retry; player_status reports the current state.",
+                target.port,
+                target.project_path.display()
+            ));
+        }
+        if target.is_runtime {
+            return Err(anyhow!(
+                "Player is not answering at 127.0.0.1:{} — the player executable is not running, or this build has the runtime server disabled.\n\nStart the exe in {} (a development build with enableInDevelopmentBuilds) and retry; player_status reports the current state.",
+                target.port,
+                target.project_path.display()
+            ));
+        }
         return Err(anyhow!(
             "Cannot connect to Unity Editor Pipeline server at 127.0.0.1:{}. Make sure Unity Editor is running with the Pipeline package installed.",
             target.port

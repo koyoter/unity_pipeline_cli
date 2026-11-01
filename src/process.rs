@@ -11,6 +11,9 @@ use serde::Deserialize;
 pub struct ProcessInfo {
     pub pid: u32,
     pub cmd: String,
+    /// Executable path when the enumerator reports one (Windows: `ExecutablePath`;
+    /// macOS: first token of the command line). Empty when unavailable.
+    pub exe: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -83,7 +86,7 @@ pub fn find_processes_by_name(pattern: &str) -> Result<Vec<ProcessInfo>> {
         if !haystack.contains(&needle) {
             continue;
         }
-        result.push(ProcessInfo { pid, cmd });
+        result.push(ProcessInfo { pid, cmd, exe: bin });
     }
     Ok(result)
 }
@@ -131,7 +134,9 @@ pub fn find_processes_by_name(pattern: &str) -> Result<Vec<ProcessInfo>> {
         if !cmd.to_lowercase().contains(&needle) {
             continue;
         }
-        result.push(ProcessInfo { pid, cmd });
+        // `ps` has no separate executable column; argv[0] is the best available.
+        let exe = cmd.split_whitespace().next().unwrap_or("").to_owned();
+        result.push(ProcessInfo { pid, cmd, exe });
     }
     Ok(result)
 }

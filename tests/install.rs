@@ -130,7 +130,10 @@ fn select_patch_set_matches_version_cutoffs() {
     assert_eq!(set("0.9.0-exp.0"), "0.8");
     assert_eq!(set("0.9.0-exp.1"), "0.9");
     assert_eq!(set("0.9.0"), "0.9");
-    assert_eq!(set("0.10.0"), "0.9");
+    assert_eq!(set("0.9.1-exp.0"), "0.9");
+    assert_eq!(set("0.9.1-exp.1"), "0.9.1");
+    assert_eq!(set("0.9.1"), "0.9.1");
+    assert_eq!(set("0.10.0"), "0.9.1");
 }
 
 /// 最低版本门槛：0.6.0-exp.1 及以上保留，更低的（含 0.6.0-exp.0）和解析

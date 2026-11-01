@@ -13,7 +13,12 @@ fn failed_refresh_serves_last_known_catalog() {
     let missing_project = std::env::temp_dir().join("unity-pipeline-mcp-test-missing");
     let opts = Options {
         project_path: Some(missing_project.to_string_lossy().into_owned()),
+        runtime: None,
+        runtime_path: None,
+        adb: None,
+        adb_serial: None,
     };
+    let ctx = RuntimeCtx::discover(&opts);
     let state = Mutex::new(None);
     let known = Mutex::new(None);
     let last = Mutex::new(Some(vec![json!({
@@ -22,7 +27,7 @@ fn failed_refresh_serves_last_known_catalog() {
         "inputSchema": { "type": "object" }
     })]));
 
-    let (response, changed) = handle_tools_list(json!(7), &state, &opts, &known, &last);
+    let (response, changed) = handle_tools_list(json!(7), &state, &opts, &ctx, &known, &last);
 
     assert!(!changed);
     assert_eq!(response["result"]["tools"][0]["name"], "eval");
@@ -35,15 +40,85 @@ fn failed_refresh_without_cache_stays_empty() {
     let missing_project = std::env::temp_dir().join("unity-pipeline-mcp-test-missing");
     let opts = Options {
         project_path: Some(missing_project.to_string_lossy().into_owned()),
+        runtime: None,
+        runtime_path: None,
+        adb: None,
+        adb_serial: None,
     };
+    let ctx = RuntimeCtx::discover(&opts);
     let state = Mutex::new(None);
     let known = Mutex::new(None);
     let last = Mutex::new(None);
 
-    let (response, changed) = handle_tools_list(json!(8), &state, &opts, &known, &last);
+    let (response, changed) = handle_tools_list(json!(8), &state, &opts, &ctx, &known, &last);
 
     assert!(!changed);
     assert_eq!(response["result"]["tools"].as_array().unwrap().len(), 0);
+}
+
+/// 降级模式：runtime 目标在 player 已死（无内存目录、连不上）时，回退到描述符旁的
+/// 磁盘缓存目录，并始终附上本地 player_log_read——崩溃后 agent 仍有一只手。
+#[test]
+fn runtime_failed_refresh_serves_disk_cache_and_local_tool() {
+    let dir = std::env::temp_dir().join(format!("unity-pipeline-mcp-rt-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let opts = Options {
+        project_path: None,
+        runtime: None,
+        runtime_path: Some(dir.clone()),
+        adb: None,
+        adb_serial: None,
+    };
+    let ctx = RuntimeCtx::discover(&opts);
+    assert!(ctx.is_runtime);
+    write_tools_cache(&dir, &[json!({ "name": "console.get", "description": "cached" })]);
+
+    let state = Mutex::new(None);
+    let known = Mutex::new(None);
+    let last = Mutex::new(None);
+
+    let (response, changed) = handle_tools_list(json!(9), &state, &opts, &ctx, &known, &last);
+
+    assert!(!changed);
+    let tools = response["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools[0]["name"], "console.get");
+    let names: Vec<&str> = tools
+        .iter()
+        .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+        .collect();
+    assert!(names.contains(&"player_status"));
+    assert_eq!(*names.last().unwrap(), "player_log_read");
+    fs::remove_dir_all(&dir).ok();
+}
+
+/// player_log_read 是本地工具：显式 path + lines 只做「读文件 + 截尾部」，不碰任何服务器。
+#[test]
+fn player_log_read_returns_capped_tail() {
+    let file = std::env::temp_dir().join(format!("unity-pipeline-log-{}.txt", std::process::id()));
+    fs::write(&file, (1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n")).unwrap();
+    let ctx = RuntimeCtx {
+        is_runtime: true,
+        runtime: None,
+        runtime_path: None,
+        adb: None,
+        dir: None,
+        log_path: None,
+    };
+
+    let text = player_log_text(&json!({ "path": file.to_string_lossy(), "lines": 3 }), &ctx).unwrap();
+    assert!(text.contains("line 10"));
+    assert!(text.contains("line 8"));
+    assert!(!text.contains("line 7"));
+
+    // lines 缺省 400、垃圾值被夹回边界，不 panic。
+    assert!(player_log_text(&json!({ "path": file.to_string_lossy() }), &ctx).is_ok());
+    assert!(player_log_text(&json!({ "path": file.to_string_lossy(), "lines": 0 }), &ctx).is_ok());
+
+    // 无 path 且未自动定位 → 明确报错并提示显式传 path。
+    let err = player_log_text(&json!({}), &ctx).unwrap_err().to_string();
+    assert!(err.contains("path"));
+
+    fs::remove_file(&file).ok();
 }
 
 /// 日志时间戳必须能和 Unity / 宿主日志直接对齐；用两个公认的 epoch 值钉住换算。

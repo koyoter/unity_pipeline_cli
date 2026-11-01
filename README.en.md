@@ -84,12 +84,13 @@ The command name is forwarded verbatim and resolved by the server: grouped namin
 | `<name>` | Command name, forwarded verbatim; omit to list all available commands |
 | `[params]` | Command parameters as a JSON object string |
 | `--project-path <path>` | Pin the target when multiple Editors are running |
+| `--runtime <name>` / `--runtime-path <dir>` / `--adb <package>` / `--adb-serial <serial>` | Target a running Player instead (see [Debugging a built program](#debugging-a-built-program-player)) |
 | `--timeout <seconds>` | Bounds both the local wait and the server-side execution budget (default 30) |
 | `--json` | Machine-readable output |
 
 ### `mcp` — MCP server (launched by the AI client; do not run by hand)
 
-Speaks JSON-RPC over stdio and exposes the pipeline command catalog as MCP tools. `--project-path <path>` pins a specific project — with multiple Editors running, each entry must be pinned, otherwise startup fails due to ambiguity.
+Speaks JSON-RPC over stdio and exposes the pipeline command catalog as MCP tools. `--project-path <path>` pins a specific project — with multiple Editors running, each entry must be pinned, otherwise startup fails due to ambiguity; `--runtime` / `--runtime-path` / `--adb` target a running Player instead (see [Debugging a built program](#debugging-a-built-program-player)).
 
 Features:
 
@@ -102,18 +103,66 @@ Features:
 
 ### `configure mcp` — print a client config snippet
 
+```bash
+unity_pipeline_cli configure mcp                            # print all three sections at once (see below)
+unity_pipeline_cli configure mcp --project-path "D:\proj"   # Editor section only (pinned)
+unity_pipeline_cli configure mcp --runtime-path "C:\Builds\MyGame"   # desktop Player section only
+unity_pipeline_cli configure mcp --adb com.acme.mygame      # Android Player section only
+```
+
+Bare `configure mcp` prints all three sections at once — **Editor / desktop Player / Android Player** — each a standalone paste-ready `mcpServers` entry (`--trace` attaches a `UNITY_MCP_TRACE` protocol log to the entries). See [Debugging a built program](#debugging-a-built-program-player) for what each form does.
+
+## Debugging a built program (Player)
+
+`--runtime` (by process/executable name, matching the official CLI), `--runtime-path` (by where `.unity-pipeline-runtime-port` lives: Windows — the build dir; macOS — the `.app` bundle) target a local desktop Player; `--adb <package>` (plus `--adb-serial <serial>` with several devices) targets the Player on Android — fully managed by the CLI: the descriptor on the device is read via run-as (port + token), then an `adb forward` exposes it at 127.0.0.1, re-established automatically after disconnects / app restarts. `command` and `mcp` share this target selection.
+
+**Prerequisite**: the Player must be a **development build** with the runtime server enabled (`enableInDevelopmentBuilds`). serverInfo carries the target label (e.g. `unity-mcp@MyGame`), so multiple agent-side connections never blur together.
+
+### Command coverage depends on the scripting backend
+
+The player's runtime server exposes 18 runtime commands, but **capability tiers follow the scripting backend and platform chosen at build time** — choose **Mono** when packing to get all of them:
+
+| Capability | Desktop Mono dev build | Desktop IL2CPP dev build | Android (Mono dev) | Android / iOS (IL2CPP) |
+| :--- | :--- | :--- | :--- | :--- |
+| Runtime server and the remaining commands (`console.get`, `runtime status`, input, capture, `script.methodreload`, …) | ✅ | ✅ | ✅ | ✅ |
+| `script.eval` / `script.eval_file` (dynamic compile & run) | ✅ | ❌ compiles, but `Assembly.Load` is unavailable under IL2CPP | ✅ enabled by this tool's patch (upstream compiles the Roslyn path and its reference lookup out on Android; the patch reads the DLLs from the APK via AssetManager streams instead — first call JIT-warms Roslyn, start with `--timeout 120`) | ❌ `Assembly.Load` unavailable (upstream compiles the Roslyn path out of non-desktop platforms entirely — "Platform Not Supported") |
+| `script.methodreload` hot reload | ✅ | ✅ (runs through the IL interpreter: restricted C# subset + fixed host surface) | ✅ (same) | ✅ (same) |
+
+Prefer `script.methodreload` for dynamic logic (works on every backend); `script.eval` is usable on desktop Mono and — via this tool's patch — Android Mono dev builds.
+
+### Android troubleshooting quick reference
+
+The two most common build-side pitfalls when testing on a device (symptom → evidence → fix):
+
+| Problem | Symptom | Evidence | Fix |
+| :--- | :--- | :--- | :--- |
+| Runtime pipeline stripped entirely | `run-as cat` says "No such file or directory" while the app is clearly running | `files/` directory empty + zero "Pipeline:" lines in logcat (a healthy app logs "Runtime server started successfully on port N" at launch) | In the Editor run `settings.runtime_pipeline set` to enable `enableInDevelopmentBuilds` → recompile → rebuild |
+| Package not debuggable | after a rebuild `run-as` says "package not debuggable" | — | Rebuild with `build.run`'s explicit `options: ["Development", "AllowDebugging"]` — relying on EditorUserBuildSettings' developmentBuild alone is unreliable |
+
+Also note: on Android the `persistentDataPath` location is device-dependent (internal `/data/data/<pkg>/files` or external `/sdcard/Android/data/<pkg>/files`); the CLI handles this with a three-candidate fallback (internal → external → the publisher's logcat-reported write path), no manual step needed.
+
+### The three MCP entries and degraded behavior
+
+The Player is its **own connection**, alongside the Editor entry (`configure mcp` generates these):
+
 ```json
 {
   "mcpServers": {
-    "unity_pipeline_cli": {
+    "unity_pipeline_cli-player": {
       "command": "C:\\path\\to\\unity_pipeline_cli.exe",
-      "args": ["mcp"]
+      "args": ["mcp", "--runtime-path", "C:\\Builds\\MyGame"]
+    },
+    "unity_pipeline_cli-android": {
+      "command": "C:\\path\\to\\unity_pipeline_cli.exe",
+      "args": ["mcp", "--adb", "com.acme.mygame"]
     }
   }
 }
 ```
 
-Without a pinned project: with exactly one reachable Editor it connects automatically; with several it fails due to ambiguity — append `"--project-path" "<absolute project path>"` to `args` (one `mcpServers` entry per project, no interference).
+- The tool list comes from that Player's runtime server and is invoked directly as MCP tools — no separate CLI call; when the Player starts AFTER the MCP connection, the catalog watcher thread detects it and pushes `tools/list_changed`, so the host re-lists without manual refresh
+- Degraded mode: the fetched catalog is cached in the build directory (a local temp dir on Android), so after a crash a restarted MCP still lists the tool set while calls report a clear offline error
+- Two local tools always work: `player_status` (reports whether the Player is running, with a hint on how to start it when not) and `player_log_read` (desktop: Player.log from disk; Android: the device's `adb logcat -d -s Unity`)
 
 ## Appendix
 

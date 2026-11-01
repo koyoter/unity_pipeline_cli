@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -5,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::i18n::{t, tr};
 use crate::pipeline::{
-    ensure_reachable, execute, fetch_commands, find_target, tool_name, ExecBudget, Target,
+    ensure_reachable, execute, fetch_commands, tool_name, ExecBudget, Target,
 };
 
 pub struct Options {
@@ -15,6 +16,15 @@ pub struct Options {
     /// The command's parameters as a JSON object string, forwarded verbatim.
     pub params_json: Option<String>,
     pub project_path: Option<String>,
+    /// Target a running Player by process/executable name (official `--runtime`).
+    pub runtime: Option<String>,
+    /// Target a running Player by the directory holding its runtime port file
+    /// (official `--runtime-path`).
+    pub runtime_path: Option<PathBuf>,
+    /// Target an Android player build over adb by package name (`--adb`).
+    pub adb: Option<String>,
+    /// Serial of the adb device when several are attached (`--adb-serial`).
+    pub adb_serial: Option<String>,
     pub timeout_seconds: u64,
     pub as_json: bool,
 }
@@ -22,7 +32,13 @@ pub struct Options {
 const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn run(opts: Options) -> Result<()> {
-    let target = find_target(opts.project_path.as_deref())?;
+    let target = crate::runtime::resolve_target(
+        opts.runtime.as_deref(),
+        opts.runtime_path.as_deref(),
+        opts.adb.as_deref(),
+        opts.adb_serial.as_deref(),
+        opts.project_path.as_deref(),
+    )?;
     ensure_reachable(&target)?;
 
     match opts.name {

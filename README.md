@@ -84,12 +84,13 @@ unity_pipeline_cli command "asset find" '{"type":"Material"}'  # 带参执行（
 | `<name>` | 指令名，原样转发；省略则列出全部可用指令 |
 | `[params]` | 指令参数，JSON 对象字符串 |
 | `--project-path <路径>` | 多个 Editor 同时运行时锁定目标 |
+| `--runtime <进程名>` / `--runtime-path <目录>` / `--adb <包名>` / `--adb-serial <serial>` | 目标改为运行中的 Player（见[调试打包后的程序](#调试打包后的程序-player)） |
 | `--timeout <秒>` | 同时限定本地等待与服务端执行预算（默认 30） |
 | `--json` | 机器可读输出 |
 
 ### `mcp` — MCP 服务端（由 AI 客户端拉起，勿手动运行）
 
-在 stdio 上运行 JSON-RPC，把管线指令目录暴露为 MCP 工具。`--project-path <路径>` 可绑定具体项目——多个 Editor 并存时必须分别绑定，否则会因歧义启动失败。
+在 stdio 上运行 JSON-RPC，把管线指令目录暴露为 MCP 工具。`--project-path <路径>` 可绑定具体项目——多个 Editor 并存时必须分别绑定，否则会因歧义启动失败；`--runtime` / `--runtime-path` / `--adb` 则指向运行中的 Player（见[调试打包后的程序](#调试打包后的程序-player)）。
 
 特性：
 
@@ -102,18 +103,66 @@ unity_pipeline_cli command "asset find" '{"type":"Material"}'  # 带参执行（
 
 ### `configure mcp` — 生成客户端配置片段
 
+```bash
+unity_pipeline_cli configure mcp                            # 一次打印全部三节（见下）
+unity_pipeline_cli configure mcp --project-path "D:\proj"   # 只打编辑器节（绑定项目）
+unity_pipeline_cli configure mcp --runtime-path "C:\Builds\MyGame"   # 只打桌面 Player 节
+unity_pipeline_cli configure mcp --adb com.acme.mygame      # 只打 Android Player 节
+```
+
+不带 flag 一次打印三节——**编辑器 / 桌面 Player / Android Player**——每节都是可直接粘贴的独立 `mcpServers` 条目（`--trace` 给条目附上 `UNITY_MCP_TRACE` 协议日志）。三节的具体形态与差异见[调试打包后的程序](#调试打包后的程序-player)。
+
+## 调试打包后的程序（Player）
+
+`--runtime`（按进程/可执行名，官方 CLI 同款）、`--runtime-path`（按 `.unity-pipeline-runtime-port` 所在位置：Windows 传构建目录、macOS 传 `.app` 包路径）指向本地桌面 Player；`--adb <包名>`（多设备加 `--adb-serial <serial>`）指向 Android 上的 Player——CLI 全托管：run-as 读设备上的描述符（port + token）→ `adb forward` 转发到 127.0.0.1，断线 / 应用重启后自动重建。`command` 与 `mcp` 共用这套目标选择。
+
+**前提**：Player 必须是**开发构建**且启用了 runtime server（`enableInDevelopmentBuilds`）。serverInfo 名字带目标标识（如 `unity-mcp@MyGame`），agent 侧多个连接不会混。
+
+### 指令支持范围：脚本后端决定
+
+Player 端 runtime server 暴露 18 条 runtime 指令，但**能力按打包时的脚本后端与平台分档**——要全部指令，打包选 **Mono**：
+
+| 能力 | 桌面 Mono dev 构建 | 桌面 IL2CPP dev 构建 | Android（Mono dev） | Android / iOS（IL2CPP） |
+| :--- | :--- | :--- | :--- | :--- |
+| runtime 服务器与其余指令（`console.get`、`runtime status`、input、capture、`script.methodreload`…） | ✅ | ✅ | ✅ | ✅ |
+| `script.eval` / `script.eval_file`（动态编译执行） | ✅ | ❌ 编译过但 `Assembly.Load` 在 IL2CPP 下不可用 | ✅ 本工具补丁打通（上游裁剪了 Android 的 Roslyn 路径与引用收集，补丁改走 APK 内读 DLL + AssetManager 流式引用；首次调用需 Roslyn 预热，建议 `--timeout 120` 起） | ❌ `Assembly.Load` 不可用（上游对非桌面平台根本不编入 Roslyn 路径，报 "Platform Not Supported"） |
+| `script.methodreload` 热更 | ✅ | ✅（经 IL 解释器执行：受限 C# 子集 + 固定 host 面） | ✅（同左） | ✅（同左） |
+
+调动态逻辑优先走 `script.methodreload`（全后端可用）；`script.eval` 在桌面 Mono 与 Android Mono dev 构建可用（Android 依赖本工具补丁）。
+
+### Android 排障速查
+
+真机联调最常见的两个构建侧坑（现象 → 判据 → 修复）：
+
+| 问题 | 现象 | 判据 | 修复 |
+| :--- | :--- | :--- | :--- |
+| runtime pipeline 被整个裁掉 | `run-as cat` 报 "No such file or directory"，但 app 明明在跑 | `files/` 目录全空 + logcat 零条 "Pipeline:" 行（健康应用启动即打 "Runtime server started successfully on port N"） | 编辑器里 `settings.runtime_pipeline set` 打开 `enableInDevelopmentBuilds` → recompile → 重打包 |
+| 包不可调试 | 重打包后 `run-as` 报 "package not debuggable" | — | 重打包显式带 `build.run` 的 `options: ["Development", "AllowDebugging"]`——只靠 EditorUserBuildSettings 的 developmentBuild 不可靠 |
+
+另注意：Android 的 `persistentDataPath` 落点设备相关（内部 `/data/data/<pkg>/files` 或外部 `/sdcard/Android/data/<pkg>/files`），CLI 已做三级候选自动兼容（内部 → 外部 → 解析 logcat 里 publisher 自报的写入路径），无需手动干预。
+
+### MCP 三条目与降级行为
+
+Player 是一条**独立连接**，与 Editor 条目并存（`configure mcp` 可直接生成）：
+
 ```json
 {
   "mcpServers": {
-    "unity_pipeline_cli": {
+    "unity_pipeline_cli-player": {
       "command": "C:\\path\\to\\unity_pipeline_cli.exe",
-      "args": ["mcp"]
+      "args": ["mcp", "--runtime-path", "C:\\Builds\\MyGame"]
+    },
+    "unity_pipeline_cli-android": {
+      "command": "C:\\path\\to\\unity_pipeline_cli.exe",
+      "args": ["mcp", "--adb", "com.acme.mygame"]
     }
   }
 }
 ```
 
-未绑定项目时：恰好 1 个可用 Editor 会自动连接；并存多个时会因歧义失败，需在 `args` 中追加 `"--project-path" "<项目绝对路径>"`（每个项目一条 `mcpServers` 条目，互不干扰）。
+- 工具表来自该 Player 的 runtime server，直接以 MCP 工具调用，无需另起 CLI；Player 在 MCP 连接**之后**启动时，目录监视线程自动探到并推送 `tools/list_changed`，宿主无需手动刷新
+- 降级可用：成功拉到工具表后缓存在构建目录（Android 在本地临时目录），Player 崩溃后重启 MCP 仍能列出工具集，调用则明确报离线错误
+- 两个本地工具始终可用：`player_status`（查 Player 是否在跑，不在跑时给出启动提示）、`player_log_read`（桌面读 Player.log，Android 读 `adb logcat -d -s Unity`）
 
 ## 附录
 

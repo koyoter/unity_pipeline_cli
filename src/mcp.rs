@@ -1,17 +1,18 @@
 use std::collections::HashSet;
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex, OnceLock,
+    Arc, Mutex, OnceLock,
 };
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
 use crate::pipeline::{
-    self, command_input_schema, ensure_reachable, execute, fetch_commands, find_target,
+    self, command_input_schema, ensure_reachable, execute, fetch_commands,
     is_failed_eval_envelope, is_transient, retry_delay, tool_name, ExecBudget, Target,
 };
 
@@ -34,6 +35,113 @@ const BUSY_WAIT_DEFAULT: u64 = 60;
 
 pub struct Options {
     pub project_path: Option<String>,
+    /// Official `--runtime`: target a running Player by process/executable name.
+    pub runtime: Option<String>,
+    /// Official `--runtime-path`: target a running Player by the directory holding its
+    /// runtime port file.
+    pub runtime_path: Option<PathBuf>,
+    /// Target an Android player build over adb: package name (e.g. com.acme.mygame).
+    pub adb: Option<String>,
+    /// Serial of the adb device when several are attached.
+    pub adb_serial: Option<String>,
+}
+
+/// Runtime-target context, resolved once at startup so the offline paths (tool cache,
+/// Player.log) do not depend on the player still being alive.
+#[derive(Clone)]
+struct RuntimeCtx {
+    is_runtime: bool,
+    /// Raw target flags, kept so `player_status` can re-resolve on every call — a restarted
+    /// player rewrites the descriptor with a fresh port and per-process token.
+    runtime: Option<String>,
+    runtime_path: Option<PathBuf>,
+    /// Android target (`--adb`): package + serial. Every adb operation re-selects the device
+    /// and re-reads the descriptor, so reconnects and app restarts self-heal.
+    adb: Option<crate::adb::AdbTarget>,
+    /// The player's build dir (desktop) or local cache dir (Android): cache file location
+    /// and Player.log discovery root. `None` when it could not be determined (e.g.
+    /// `--runtime` by name and the player is dead) — the local tools then degrade to
+    /// explicit-path/empty-catalog behavior.
+    dir: Option<PathBuf>,
+    /// Auto-located Player.log, best effort (desktop only; Android uses logcat).
+    log_path: Option<PathBuf>,
+}
+
+impl RuntimeCtx {
+    fn discover(opts: &Options) -> Self {
+        if let Some(package) = opts.adb.as_deref() {
+            // Android: the descriptor lives on the device, so there is no local build dir —
+            // the tool cache goes to a per-package temp dir instead, and the log is logcat.
+            let dir = std::env::temp_dir()
+                .join("unity-pipeline-mcp")
+                .join(package);
+            let _ = std::fs::create_dir_all(&dir);
+            return Self {
+                is_runtime: true,
+                runtime: None,
+                runtime_path: None,
+                adb: Some(crate::adb::AdbTarget {
+                    serial: opts.adb_serial.clone(),
+                    package: package.to_owned(),
+                }),
+                dir: Some(dir),
+                log_path: None,
+            };
+        }
+        if opts.runtime.is_none() && opts.runtime_path.is_none() {
+            return Self {
+                is_runtime: false,
+                runtime: None,
+                runtime_path: None,
+                adb: None,
+                dir: None,
+                log_path: None,
+            };
+        }
+        // Best effort by design: a dead player still leaves its descriptor on disk, so the
+        // dir is usually known even when the server will never answer again.
+        let target = crate::runtime::find_runtime_target(
+            opts.runtime.as_deref(),
+            opts.runtime_path.as_deref(),
+        )
+        .ok();
+        let dir = target
+            .as_ref()
+            .map(|t| t.project_path.clone())
+            .or_else(|| {
+                opts.runtime_path.as_deref().and_then(|p| {
+                    if p.is_dir() {
+                        Some(p.to_path_buf())
+                    } else {
+                        p.parent().map(Path::to_path_buf)
+                    }
+                })
+            });
+        let log_path = dir.as_deref().and_then(crate::runtime::find_player_log);
+        Self {
+            is_runtime: true,
+            runtime: opts.runtime.clone(),
+            runtime_path: opts.runtime_path.clone(),
+            adb: None,
+            dir,
+            log_path,
+        }
+    }
+
+    /// The name agents see in serverInfo: plain for the editor, suffixed with the build dir
+    /// name for a player, so two configured MCP connections never look identical.
+    fn server_name(&self) -> String {
+        if !self.is_runtime {
+            return SERVER_NAME.to_owned();
+        }
+        let label = self
+            .dir
+            .as_ref()
+            .and_then(|d| d.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "runtime".to_owned());
+        format!("{SERVER_NAME}@{label}")
+    }
 }
 
 /// When UNITY_MCP_TRACE names a file, every protocol line in and out, every busy retry and any
@@ -151,28 +259,45 @@ fn max_wait_secs() -> u64 {
 }
 
 pub fn run(opts: Options) -> Result<()> {
-    let state = Mutex::new(None::<Target>);
+    // Arc so the runtime-mode catalog watcher thread can share them; `&Arc<Mutex<_>>` still
+    // deref-coerces to `&Mutex<_>` at every existing call site.
+    let state = Arc::new(Mutex::new(None::<Target>));
     // Tool names from the last successful catalog fetch, so a change can be announced.
-    let known_tools = Mutex::new(None::<HashSet<String>>);
+    let known_tools = Arc::new(Mutex::new(None::<HashSet<String>>));
     // Last full catalog, served instead of an empty list when a refresh fails: emptying the
     // host's tool set is what turns a recoverable outage into "MCP tool is not found".
-    let last_tools = Mutex::new(None::<Vec<Value>>);
+    let last_tools = Arc::new(Mutex::new(None::<Vec<Value>>));
     let initialized = AtomicBool::new(false);
-    let stop = AtomicBool::new(false);
+    let stop = Arc::new(AtomicBool::new(false));
     let stdout = std::io::stdout();
+    let ctx = RuntimeCtx::discover(&opts);
+    let server_name = ctx.server_name();
 
     // Announce readiness on stderr — stdout carries only protocol messages.
     let trace_path = trace_init();
     trace(&format!(
-        "== start pid={} v{SERVER_VERSION} busy-wait-cap={}s project_path={:?} trace={}",
+        "== start pid={} v{SERVER_VERSION} busy-wait-cap={}s project_path={:?} runtime={} runtime_dir={} trace={}",
         std::process::id(),
         max_wait_secs(),
         opts.project_path,
+        ctx.is_runtime,
+        ctx.dir
+            .as_ref()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "-".to_owned()),
         trace_path
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "off".to_owned())
     ));
     eprintln!("unity mcp: server started on stdio, waiting for client requests");
+
+    // Runtime mode: the player usually starts AFTER this MCP connection (degraded startup is
+    // the normal flow), so a watcher thread pushes notifications/tools/list_changed the
+    // moment the player's catalog appears or changes — hosts re-list on that notification and
+    // never need the agent to re-ask.
+    if ctx.is_runtime {
+        spawn_catalog_watcher(&ctx, &state, &known_tools, &last_tools, &stop);
+    }
 
     let stdin = std::io::stdin();
     let mut reader = BufReader::new(stdin.lock());
@@ -229,13 +354,19 @@ pub fn run(opts: Options) -> Result<()> {
 
         match method.as_str() {
             "initialize" => {
-                let response = handle_initialize(id.clone(), &msg);
+                let response = handle_initialize(id.clone(), &msg, &server_name);
                 write_message(&stdout, &response)?;
             }
             "ping" => write_message(&stdout, &success_response(id.clone(), json!({})))?,
             "tools/list" => {
-                let (response, changed) =
-                    handle_tools_list(id.clone(), &state, &opts, &known_tools, &last_tools);
+                let (response, changed) = handle_tools_list(
+                    id.clone(),
+                    &state,
+                    &opts,
+                    &ctx,
+                    &known_tools,
+                    &last_tools,
+                );
                 write_message(&stdout, &response)?;
                 if changed && initialized.load(Ordering::Relaxed) {
                     write_message(
@@ -246,7 +377,7 @@ pub fn run(opts: Options) -> Result<()> {
             }
             "tools/call" => {
                 let response =
-                    handle_tools_call(id.clone(), &msg, &state, &opts, &last_tools);
+                    handle_tools_call(id.clone(), &msg, &state, &opts, &ctx, &last_tools);
                 write_message(&stdout, &response)?;
             }
             "shutdown" => {
@@ -264,7 +395,77 @@ pub fn run(opts: Options) -> Result<()> {
     }
 
     trace("== exit");
+    stop.store(true, Ordering::Relaxed);
     Ok(())
+}
+
+/// How often the runtime-mode watcher probes the player for catalog changes.
+const CATALOG_WATCH_INTERVAL: Duration = Duration::from_secs(3);
+
+/// Poll the runtime target for its command catalog and announce changes. Runs on its own
+/// thread, runtime mode only. Each write_message is one locked stdout transaction, so the
+/// notification cannot interleave with the main loop's responses.
+fn spawn_catalog_watcher(
+    ctx: &RuntimeCtx,
+    state: &Arc<Mutex<Option<Target>>>,
+    known_tools: &Arc<Mutex<Option<HashSet<String>>>>,
+    last_tools: &Arc<Mutex<Option<Vec<Value>>>>,
+    stop: &Arc<AtomicBool>,
+) {
+    let ctx = ctx.clone();
+    let state = state.clone();
+    let known_tools = known_tools.clone();
+    let last_tools = last_tools.clone();
+    let stop = stop.clone();
+    std::thread::spawn(move || {
+        // Stdout is a global handle — a fresh clone per thread is fine.
+        let stdout = std::io::stdout();
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(CATALOG_WATCH_INTERVAL);
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            let Ok(target) = resolve_target_for_ctx(&ctx) else {
+                continue; // no descriptor / device gone: local tools still serve
+            };
+            if !crate::http::probe_pipeline(target.port, target.eval_token.as_deref()) {
+                // Player went away (or is starting): drop the cached connection so the next
+                // forwarded call re-resolves instead of failing on a stale socket target.
+                invalidate(&state);
+                continue;
+            }
+            let Ok(tools) = fetch_tools(&target) else {
+                trace(".. watcher: player reachable but catalog fetch failed");
+                continue;
+            };
+            let names: HashSet<String> = tools
+                .iter()
+                .filter_map(|t| t.get("name").and_then(|v| v.as_str()).map(str::to_owned))
+                .collect();
+            let changed = {
+                let mut guard = known_tools.lock().unwrap();
+                // Same rule as refresh_tools: empty catalogs announce nothing, and the known
+                // set updates even when the answer is "no change".
+                let changed = guard.as_ref() != Some(&names) && !names.is_empty();
+                *guard = Some(names);
+                changed
+            };
+            if !changed {
+                // Keep the live target warm for forwarded calls either way.
+                *state.lock().unwrap() = Some(target);
+                continue;
+            }
+            trace(".. watcher: player catalog changed; notifying client");
+            *last_tools.lock().unwrap() = Some(with_local_tools(tools, &ctx));
+            *state.lock().unwrap() = Some(target);
+            let notification =
+                json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" });
+            if let Err(err) = write_message(&stdout, &notification) {
+                trace(&format!("!! watcher notification failed: {err}"));
+                break;
+            }
+        }
+    });
 }
 
 fn write_message(stdout: &std::io::Stdout, msg: &Value) -> Result<()> {
@@ -304,7 +505,7 @@ fn error_response(id: Value, code: i64, message: &str) -> Value {
 
 /// Answer the handshake with the client's own protocol revision when we speak it, and advertise
 /// that the tool list can change at runtime (new commands appear after a domain reload).
-fn handle_initialize(id: Value, msg: &Value) -> Value {
+fn handle_initialize(id: Value, msg: &Value, server_name: &str) -> Value {
     let requested = msg
         .pointer("/params/protocolVersion")
         .and_then(|v| v.as_str());
@@ -320,7 +521,7 @@ fn handle_initialize(id: Value, msg: &Value) -> Value {
                 "tools": { "listChanged": true }
             },
             "serverInfo": {
-                "name": SERVER_NAME,
+                "name": server_name,
                 "version": SERVER_VERSION,
             }
         }),
@@ -332,35 +533,50 @@ fn handle_tools_list(
     id: Value,
     state: &Mutex<Option<Target>>,
     opts: &Options,
+    ctx: &RuntimeCtx,
     known_tools: &Mutex<Option<HashSet<String>>>,
     last_tools: &Mutex<Option<Vec<Value>>>,
 ) -> (Value, bool) {
-    match refresh_tools(state, opts, known_tools, last_tools) {
+    match refresh_tools(state, opts, ctx, known_tools, last_tools) {
         Ok((tools, changed)) => (success_response(id, json!({ "tools": tools })), changed),
         Err(err) => {
-            // An unreachable Editor is a normal state to start in, not a protocol error: hand
-            // back an empty catalog (so the client still completes initialize + list) and let a
-            // later call re-discover the Editor.
+            // An unreachable Editor/Player is a normal state to start in, not a protocol
+            // error: hand back a catalog (so the client still completes initialize + list)
+            // and let a later call re-discover the server.
             invalidate(state);
             trace(&format!("stderr: {err:#}"));
             eprintln!("unity mcp: {err:#}");
             // Once a catalog has been served, never answer with an empty one: hosts treat that
             // as every tool being unregistered ("MCP tool is not found") and do not re-list on
             // their own. The stale list keeps calls working until the next discovery succeeds.
+            // A runtime target additionally falls back to the on-disk catalog cache, so even a
+            // first list after the player crashed still shows the tool set (Q3 degraded mode).
             let stale = last_tools.lock().unwrap().clone();
-            match stale {
-                Some(tools) if !tools.is_empty() => {
-                    trace(&format!(
-                        ".. serving cached catalog ({} tools) until the editor is reachable",
-                        tools.len()
-                    ));
-                    (success_response(id, json!({ "tools": tools })), false)
-                }
+            let stale = match stale {
+                Some(tools) if !tools.is_empty() => Some(tools),
                 _ => {
-                    trace(".. no catalog served yet; answering with an empty list");
-                    (success_response(id, json!({ "tools": [] })), false)
+                    if ctx.is_runtime {
+                        let cached = ctx.dir.as_deref().and_then(read_tools_cache);
+                        if let Some(tools) = cached {
+                            trace(&format!(
+                                ".. serving on-disk catalog cache ({} tools) until the player is reachable",
+                                tools.len()
+                            ));
+                            Some(tools)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
+            };
+            let tools = stale.unwrap_or_default();
+            let served = with_local_tools(tools, ctx);
+            if served.is_empty() {
+                trace(".. no catalog served yet; answering with an empty list");
             }
+            (success_response(id, json!({ "tools": served })), false)
         }
     }
 }
@@ -370,6 +586,7 @@ fn handle_tools_call(
     msg: &Value,
     state: &Mutex<Option<Target>>,
     opts: &Options,
+    ctx: &RuntimeCtx,
     last_tools: &Mutex<Option<Vec<Value>>>,
 ) -> Value {
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
@@ -382,6 +599,15 @@ fn handle_tools_call(
         return error_response(id, -32602, "invalid params: tools/call requires a name");
     }
     let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+
+    // Local tools never touch the server — they exist precisely for when it cannot be reached.
+    if ctx.is_runtime {
+        match name.as_str() {
+            "player_status" => return success_response(id, local_player_status(ctx)),
+            "player_log_read" => return success_response(id, local_player_log_read(&args, ctx)),
+            _ => {}
+        }
+    }
 
     match execute_tool_with_retry(&name, &args, state, opts, last_tools) {
         Ok(result) => success_response(id, result),
@@ -421,6 +647,7 @@ fn host_note(state: &Mutex<Option<Target>>, err: &anyhow::Error) -> Option<Strin
 fn refresh_tools(
     state: &Mutex<Option<Target>>,
     opts: &Options,
+    ctx: &RuntimeCtx,
     known_tools: &Mutex<Option<HashSet<String>>>,
     last_tools: &Mutex<Option<Vec<Value>>>,
 ) -> Result<(Vec<Value>, bool)> {
@@ -454,6 +681,14 @@ fn refresh_tools(
         }
     };
 
+    // A runtime target persists its catalog next to the descriptor: the next server start
+    // can serve it even when the player has since exited or crashed.
+    if ctx.is_runtime {
+        if let Some(dir) = ctx.dir.as_deref() {
+            write_tools_cache(dir, &tools);
+        }
+    }
+
     let names: HashSet<String> = tools
         .iter()
         .filter_map(|t| t.get("name").and_then(|v| v.as_str()).map(str::to_owned))
@@ -466,8 +701,9 @@ fn refresh_tools(
         *guard = Some(names);
         changed
     };
-    *last_tools.lock().unwrap() = Some(tools.clone());
-    Ok((tools, changed))
+    let served = with_local_tools(tools.clone(), ctx);
+    *last_tools.lock().unwrap() = Some(served.clone());
+    Ok((served, changed))
 }
 
 /// Run one tool, transparently recovering from the two states that are not real failures:
@@ -676,8 +912,8 @@ fn redact_token(text: &str, state: &Mutex<Option<Target>>) -> String {
     scrub(text, token.as_deref())
 }
 
-/// Resolve the Editor once and cache it; the connection is dropped whenever a call shows the
-/// cached target is no longer answering.
+/// Resolve the Editor/Player once and cache it; the connection is dropped whenever a call
+/// shows the cached target is no longer answering.
 fn ensure_connection(state: &Mutex<Option<Target>>, opts: &Options) -> Result<Target> {
     {
         let guard = state.lock().unwrap();
@@ -685,10 +921,16 @@ fn ensure_connection(state: &Mutex<Option<Target>>, opts: &Options) -> Result<Ta
             return Ok(target.clone());
         }
     }
-    let target = find_target(opts.project_path.as_deref())?;
+    let target = crate::runtime::resolve_target(
+        opts.runtime.as_deref(),
+        opts.runtime_path.as_deref(),
+        opts.adb.as_deref(),
+        opts.adb_serial.as_deref(),
+        opts.project_path.as_deref(),
+    )?;
     ensure_reachable(&target)?;
     trace(&format!(
-        ".. editor port={} pid={} token={} project={}",
+        ".. target port={} pid={} token={} root={}",
         target.port,
         target
             .pid
@@ -725,6 +967,193 @@ fn fetch_tools(target: &Target) -> Result<Vec<Value>> {
             }))
         })
         .collect())
+}
+
+/// ---- Runtime-target local tools ----
+///
+/// The one tool that is not forwarded (`player_log_read`) exists for exactly the state the
+/// forwarded tools cannot serve: the player has exited or crashed. It reads Player.log from
+/// disk, no server involved. Only advertised on a runtime target; editor mode is unchanged.
+
+const PLAYER_LOG_TOOL: &str = "player_log_read";
+const PLAYER_STATUS_TOOL: &str = "player_status";
+
+/// One resolution point for the runtime target behind the local tools and the watcher:
+/// re-reads the descriptor on every call so app restarts (fresh per-process token) and
+/// reconnected devices (fresh adb forward) are picked up.
+fn resolve_target_for_ctx(ctx: &RuntimeCtx) -> Result<Target> {
+    if let Some(at) = ctx.adb.as_ref() {
+        return crate::adb::resolve_adb_target(at.serial.as_deref(), &at.package);
+    }
+    crate::runtime::find_runtime_target(ctx.runtime.as_deref(), ctx.runtime_path.as_deref())
+}
+
+fn with_local_tools(mut tools: Vec<Value>, ctx: &RuntimeCtx) -> Vec<Value> {
+    if ctx.is_runtime {
+        tools.push(json!({
+            "name": PLAYER_STATUS_TOOL,
+            "description": "Check whether this player build is running and its runtime server answers. When it runs, the runtime commands are available directly as MCP tools — call tools/list to refresh and invoke them here, no separate CLI call needed. When it does not, the result says how to start the exe.",
+            // MCP spec: inputSchema is required on every tool; hosts reject the list without it.
+            "inputSchema": { "type": "object", "properties": {} }
+        }));
+        tools.push(json!({
+            "name": PLAYER_LOG_TOOL,
+            "description": "Read the tail of this player's log — works with the player offline, e.g. right after a crash. Desktop: Player.log from disk; Android: the device's Unity logcat via adb (`path` is desktop-only). Omit `path` to read the auto-located log.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Explicit log file path; overrides auto-discovery (desktop only; Windows: %USERPROFILE%\\AppData\\LocalLow\\<Company>\\<Product>\\Player.log)."
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "description": "How many trailing lines to return (default 400, max 5000)."
+                    }
+                }
+            }
+        }));
+    }
+    tools
+}
+
+fn local_player_status(ctx: &RuntimeCtx) -> Value {
+    match player_status_text(ctx) {
+        Ok(text) => json!({ "content": [{ "type": "text", "text": text }] }),
+        Err(err) => json!({
+            "content": [{ "type": "text", "text": format!("Error: {err:#}") }],
+            "isError": true,
+        }),
+    }
+}
+
+fn player_status_text(ctx: &RuntimeCtx) -> Result<String> {
+    // Re-resolve on every call: a restarted player rewrites its descriptor with a fresh port
+    // and per-process token, and this tool is exactly how the agent notices that.
+    let log_note = if ctx.adb.is_some() {
+        "\nLog: adb logcat -s Unity (player_log_read tails it).".to_owned()
+    } else {
+        match ctx.log_path.as_ref() {
+            Some(p) => format!("\nPlayer.log: {}", p.display()),
+            None => "\nPlayer.log: not located automatically — player_log_read accepts an explicit path.".to_owned(),
+        }
+    };
+    let target = match resolve_target_for_ctx(ctx) {
+        Ok(t) => t,
+        Err(err) => {
+            if ctx.adb.is_some() {
+                return Ok(format!(
+                    "Android app is NOT reachable.\n\n{err:#}{log_note}\n\nLaunch the app on the device (a development build with enableInDevelopmentBuilds), then call this tool again; once it reports the app as running, the runtime commands are available directly as MCP tools (call tools/list to refresh)."
+                ));
+            }
+            return Ok(format!(
+                "Player is NOT running — no runtime descriptor found.\n\n{err:#}{log_note}\n\nAfter starting the exe, call this tool again; once it reports the player as running, the runtime commands are available directly as MCP tools (call tools/list to refresh)."
+            ));
+        }
+    };
+    if !crate::http::probe_pipeline(target.port, target.eval_token.as_deref()) {
+        if ctx.adb.is_some() {
+            return Ok(format!(
+                "Android app is not answering at 127.0.0.1:{} (adb forward, device path {}). The app may still be starting, or this build has the runtime server disabled.\n\nLaunch the app on the device — a development build with enableInDevelopmentBuilds; when it is up, the runtime commands are available directly as MCP tools (call tools/list to refresh).{log_note}",
+                target.port,
+                target.project_path.display()
+            ));
+        }
+        return Ok(format!(
+            "Player is NOT answering at 127.0.0.1:{} (descriptor: pid {:?}, build dir {}). The exe may still be starting, or this build has the runtime server disabled.\n\nStart the exe in {} — a development build with enableInDevelopmentBuilds; when it is up, the runtime commands are available directly as MCP tools (call tools/list to refresh).{log_note}",
+            target.port,
+            target.pid,
+            target.project_path.display(),
+            target.project_path.display()
+        ));
+    }
+    if ctx.adb.is_some() {
+        return Ok(format!(
+            "Android app is running: pid {:?} via adb forward 127.0.0.1:{} (device path {}).\nIts runtime commands are exposed as MCP tools — call tools/list to refresh the list if they are not shown yet, then invoke any of them directly through MCP (no separate CLI call needed).{log_note}",
+            target.pid,
+            target.port,
+            target.project_path.display()
+        ));
+    }
+    Ok(format!(
+        "Player is running: pid {:?} at 127.0.0.1:{}, build dir {}.\nIts runtime commands are exposed as MCP tools — call tools/list to refresh the list if they are not shown yet, then invoke any of them directly through MCP (no separate CLI call needed).{log_note}",
+        target.pid,
+        target.port,
+        target.project_path.display()
+    ))
+}
+
+fn local_player_log_read(args: &Value, ctx: &RuntimeCtx) -> Value {
+    match player_log_text(args, ctx) {
+        Ok(text) => json!({ "content": [{ "type": "text", "text": text }] }),
+        Err(err) => json!({
+            "content": [{ "type": "text", "text": format!("Error: {err:#}") }],
+            "isError": true,
+        }),
+    }
+}
+
+fn player_log_text(args: &Value, ctx: &RuntimeCtx) -> Result<String> {
+    // Android: the log is the device's Unity logcat buffer, not a file.
+    if let Some(at) = ctx.adb.as_ref() {
+        let lines = args
+            .get("lines")
+            .and_then(Value::as_u64)
+            .unwrap_or(400)
+            .clamp(1, 5000) as usize;
+        return crate::adb::logcat_tail(at, lines);
+    }
+    let path = args
+        .get("path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .or_else(|| ctx.log_path.clone())
+        .ok_or_else(|| {
+            anyhow!(
+                "Player.log not found — pass an explicit \"path\" (Windows: %USERPROFILE%\\AppData\\LocalLow\\<Company>\\<Product>\\Player.log)"
+            )
+        })?;
+    let lines = args
+        .get("lines")
+        .and_then(Value::as_u64)
+        .unwrap_or(400)
+        .clamp(1, 5000) as usize;
+    let text =
+        fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
+    let total = text.lines().count();
+    let tail: Vec<&str> = text.lines().skip(total.saturating_sub(lines)).collect();
+    Ok(format!(
+        "{} — showing {}/{} lines (file is {} bytes)\n{}",
+        path.display(),
+        tail.len(),
+        total,
+        text.len(),
+        tail.join("\n")
+    ))
+}
+
+/// On-disk catalog cache, written next to the runtime descriptor after every successful
+/// fetch so a later start can serve a tool list for a player that is dead or crashing.
+const TOOLS_CACHE_FILE: &str = ".unity-pipeline-mcp-tools.json";
+
+fn write_tools_cache(dir: &Path, tools: &[Value]) {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let payload = json!({ "savedAt": iso8601_utc(now_ms), "tools": tools });
+    if let Err(err) = fs::write(dir.join(TOOLS_CACHE_FILE), crate::json::pretty(&payload)) {
+        trace(&format!(".. tools cache write failed: {err}"));
+    }
+}
+
+fn read_tools_cache(dir: &Path) -> Option<Vec<Value>> {
+    let text = fs::read_to_string(dir.join(TOOLS_CACHE_FILE)).ok()?;
+    serde_json::from_str::<Value>(&text)
+        .ok()?
+        .get("tools")?
+        .as_array()
+        .cloned()
 }
 
 #[cfg(test)]

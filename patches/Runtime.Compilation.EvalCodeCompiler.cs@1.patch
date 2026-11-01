@@ -1,0 +1,12 @@
+diff --git a/Runtime/Compilation/EvalCodeCompiler.cs b/Runtime/Compilation/EvalCodeCompiler.cs
+--- a/Runtime/Compilation/EvalCodeCompiler.cs
++++ b/Runtime/Compilation/EvalCodeCompiler.cs
+@@ -14,7 +14,7 @@
+     /// </summary>
+     static class EvalCodeCompiler
+     {
+-#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG)
++#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG) || UNITY_ANDROID
+ 
+         // Fixed lines in the generated source before user code begins
+         private const int BaseCodeLineOffset = 11;

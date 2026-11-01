@@ -1,7 +1,9 @@
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+mod adb;
 mod command;
 mod configure;
 mod editor;
@@ -13,6 +15,7 @@ mod mcp;
 mod pipeline;
 mod process;
 mod projects;
+mod runtime;
 mod upgrade;
 
 /// --version 输出的完整版本串：`{semver} {平台标签}`。
@@ -45,11 +48,27 @@ enum TopCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Launch a stdio MCP server bridging agents to a running Unity Editor.
+    /// Launch a stdio MCP server bridging agents to a running Unity Editor — or, with
+    /// `--runtime`/`--runtime-path` (desktop) or `--adb` (Android), to a running Player build.
     Mcp {
         /// Target a specific Unity project by absolute path.
         #[arg(long)]
         project_path: Option<String>,
+        /// Target a running Player (runtime) by process/executable name, e.g. MyGame.exe.
+        #[arg(long, conflicts_with_all = ["adb", "adb_serial"])]
+        runtime: Option<String>,
+        /// Target a running Player by the directory holding its
+        /// `.unity-pipeline-runtime-port` file (Windows: next to the player executable,
+        /// macOS: the .app bundle).
+        #[arg(long, conflicts_with_all = ["adb", "adb_serial"])]
+        runtime_path: Option<PathBuf>,
+        /// Target an Android player build over adb by package name (e.g. com.acme.mygame);
+        /// the CLI reads the runtime descriptor via run-as and manages the port forward.
+        #[arg(long, conflicts_with_all = ["runtime", "runtime_path"])]
+        adb: Option<String>,
+        /// Serial of the adb device when several are attached.
+        #[arg(long)]
+        adb_serial: Option<String>,
     },
     /// List pipeline commands, or execute one on a running Unity Editor.
     #[command(alias = "cmd", alias = "request")]
@@ -64,6 +83,20 @@ enum TopCommand {
         /// Target a specific Unity project by absolute path.
         #[arg(long)]
         project_path: Option<String>,
+        /// Target a running Player (runtime) by process/executable name, e.g. MyGame.exe.
+        #[arg(long, conflicts_with_all = ["adb", "adb_serial"])]
+        runtime: Option<String>,
+        /// Target a running Player by the directory holding its
+        /// `.unity-pipeline-runtime-port` file (Windows: next to the player executable,
+        /// macOS: the .app bundle).
+        #[arg(long, conflicts_with_all = ["adb", "adb_serial"])]
+        runtime_path: Option<PathBuf>,
+        /// Target an Android player build over adb by package name (e.g. com.acme.mygame).
+        #[arg(long, conflicts_with_all = ["runtime", "runtime_path"])]
+        adb: Option<String>,
+        /// Serial of the adb device when several are attached.
+        #[arg(long)]
+        adb_serial: Option<String>,
         /// Request timeout in seconds.
         #[arg(long, default_value_t = 30)]
         timeout: u64,
@@ -107,6 +140,16 @@ enum ConfigureTarget {
         /// Include UNITY_MCP_TRACE (log file next to the exe) in the printed entry.
         #[arg(long)]
         trace: bool,
+        /// Print an entry targeting a running desktop Player whose
+        /// `.unity-pipeline-runtime-port` file lives in this directory.
+        #[arg(long, conflicts_with_all = ["adb", "adb_serial"])]
+        runtime_path: Option<PathBuf>,
+        /// Print an entry targeting an Android player build over adb by package name.
+        #[arg(long, conflicts_with_all = ["runtime_path"])]
+        adb: Option<String>,
+        /// Serial of the adb device when several are attached.
+        #[arg(long)]
+        adb_serial: Option<String>,
     },
 }
 
@@ -134,7 +177,19 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
-        TopCommand::Mcp { project_path } => match mcp::run(mcp::Options { project_path }) {
+        TopCommand::Mcp {
+            project_path,
+            runtime,
+            runtime_path,
+            adb,
+            adb_serial,
+        } => match mcp::run(mcp::Options {
+            project_path,
+            runtime,
+            runtime_path,
+            adb,
+            adb_serial,
+        }) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
                 eprintln!("{}: {err:#}", i18n::t("error.prefix"));
@@ -145,6 +200,10 @@ fn main() -> ExitCode {
             name,
             params,
             project_path,
+            runtime,
+            runtime_path,
+            adb,
+            adb_serial,
             timeout,
             json,
         } => {
@@ -152,6 +211,10 @@ fn main() -> ExitCode {
                 name,
                 params_json: params,
                 project_path,
+                runtime,
+                runtime_path,
+                adb,
+                adb_serial,
                 timeout_seconds: timeout,
                 as_json: json,
             });
@@ -181,13 +244,26 @@ fn main() -> ExitCode {
             }
         },
         TopCommand::Configure { target } => match target {
-            ConfigureTarget::Mcp { trace } => match configure::print_mcp_config(None, trace) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(err) => {
-                    eprintln!("{}: {err:#}", i18n::t("error.prefix"));
-                    ExitCode::from(1)
+            ConfigureTarget::Mcp {
+                trace,
+                runtime_path,
+                adb,
+                adb_serial,
+            } => {
+                match configure::print_mcp_config(
+                    None,
+                    runtime_path.as_deref(),
+                    adb.as_deref(),
+                    adb_serial.as_deref(),
+                    trace,
+                ) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("{}: {err:#}", i18n::t("error.prefix"));
+                        ExitCode::from(1)
+                    }
                 }
-            },
+            }
         },
         TopCommand::Upgrade => match upgrade::run() {
             Ok(()) => ExitCode::SUCCESS,

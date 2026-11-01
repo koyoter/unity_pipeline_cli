@@ -247,8 +247,13 @@ pub fn run(opts: Options) -> Result<()> {
     println!("{}", t("install.switch_to_unity"));
     println!();
     println!("{}", t("install.mcp_config_example"));
-    if let Err(err) = crate::configure::print_mcp_config(Some(target_project.as_path()), opts.trace)
-    {
+    if let Err(err) = crate::configure::print_mcp_config(
+        Some(target_project.as_path()),
+        None,
+        None,
+        None,
+        opts.trace,
+    ) {
         eprintln!(
             "{}",
             tr("install.gen_mcp_config_failed", &[&format!("{err:#}")])
