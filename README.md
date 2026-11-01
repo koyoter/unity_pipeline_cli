@@ -15,6 +15,20 @@
 - 🎮 **命令直控**：`command` 列出或执行 Editor 内的全部管线指令，命令名与 JSON 参数原样转发，`--json` 机器可读输出，适合脚本与 CI。
 - 🔍 **实例发现**：`projects` 列出所有运行中的 Editor 及其 Pipeline 服务状态（端口 / 版本 / 可达性）。
 
+## 超出官方 CLI 的增强
+
+官方 `unity` CLI 覆盖编辑器安装、项目创建与 Pipeline 包的基础交互；本工具在同一个环节上做了官方没有（或只停留在文档约定）的能力：
+
+| 增强点 | 官方 CLI | 本工具 |
+| :--- | :--- | :--- |
+| 🤖 **MCP 桥（主打）** | ❌ 无 MCP 形态 | Editor 与 Player 的指令目录自动暴露为 MCP 工具——纯转发零硬编码，包 0.6 → 0.9 全兼容，AI 客户端即插即用 |
+| 📱 **Android Mono 动态执行** | ❌ 上游裁掉 Android 的 Roslyn 路径，`script.eval` 报 "Platform Not Supported" | ✅ 内置补丁打通：AssetManager 流式引用 + 门槛起用，真机验收 `return 1+2` → 3、场景对象实查可用 |
+| 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁（先 dry-run 再应用）稳定支持 Unity 2022.3 |
+| 🎮 **Player 调试全托管** | 📄 `--runtime`/`--runtime-path` 仅文档约定 | ✅ 官方同款 flag 全实现，另补 `--adb <包名>`：run-as 读描述符 + adb forward + 断线/应用重启自愈，`command` 与 MCP 共用 |
+| 🛟 **调试韧性** | ❌ 连接断即失效 | ✅ Player 崩溃后 MCP 连接仍可用（工具表缓存 + `player_status`/`player_log_read` 本地工具）；Player 晚于连接启动时自动推送 `tools/list_changed` |
+| 🛠 **带补丁的一键安装** | ❌ 无补丁机制 | ✅ registry 拉取 + SHA1 校验 + 按版本自动匹配补丁集 |
+| 🌏 **中英双语 / 自更新** | ❌ | ✅ `language` 切换、`upgrade` 自检测更新 |
+
 ## 快速上手
 
 ### 前提
@@ -182,4 +196,4 @@ build-release.bat                  # Windows 一键产出 releases/
 
 ### 与官方 Unity CLI 的关系
 
-官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责编辑器安装、项目创建、版本控制接入等；控制 Editor 本身需另装 `com.unity.pipeline` 包。本工程只做并增强这一环（带补丁的一键安装、实例发现、指令执行、MCP 桥接）；不包含编辑器安装、项目创建、Unity 账号 / Cloud 集成。版本覆盖以官方 CLI 之外为目标：内置补丁让上游包跑在它开箱不支持的 Editor 上，目前已稳定支持 **Unity 2022.3**。
+官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责编辑器安装、项目创建、版本控制接入等；控制 Editor 本身需另装 `com.unity.pipeline` 包。本工程只做并增强这一环（带补丁的一键安装、实例发现、指令执行、MCP 桥接）；不包含编辑器安装、项目创建、Unity 账号 / Cloud 集成。相对官方的具体增强清单见[超出官方 CLI 的增强](#超出官方-cli-的增强)。版本覆盖以官方 CLI 之外为目标：内置补丁让上游包跑在它开箱不支持的 Editor 上，目前已稳定支持 **Unity 2022.3**。

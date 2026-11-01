@@ -15,6 +15,20 @@ This project is a streamlined, optimized take on the **Pipeline-package interact
 - 🎮 **Direct command control**: `command` lists or executes every pipeline command inside the Editor, forwarding names and JSON parameters verbatim, with `--json` machine-readable output for scripts and CI.
 - 🔍 **Instance discovery**: `projects` lists every running Editor and its Pipeline service status (port / version / reachability).
 
+## What goes beyond the official CLI
+
+The official `unity` CLI covers Editor installation, project creation, and basic Pipeline-package interaction; this tool adds capabilities the official one does not have (or only documents as conventions):
+
+| Enhancement | Official CLI | This tool |
+| :--- | :--- | :--- |
+| 🤖 **MCP bridge (headline)** | ❌ no MCP form | Editor and Player command catalogs are automatically exposed as MCP tools — pure forwarding with zero hard-coded names, compatible with package 0.6 → 0.9, plug-and-play for AI clients |
+| 📱 **Android Mono dynamic execution** | ❌ upstream compiles the Roslyn path out of Android, `script.eval` reports "Platform Not Supported" | ✅ enabled by a built-in patch: AssetManager streaming references + gate widening, device-verified (`return 1+2` → 3, live scene-object queries work) |
+| 🧩 **Older Editor compatibility** | ❌ supports only some versions out of the box | ✅ built-in patches (dry-run first) stably support Unity 2022.3 |
+| 🎮 **Fully managed Player debugging** | 📄 `--runtime`/`--runtime-path` exist as documentation conventions only | ✅ those flags fully implemented, plus `--adb <package>`: descriptor via run-as + adb forward + self-healing after disconnects/app restarts, shared by `command` and MCP |
+| 🛟 **Debugging resilience** | ❌ connection lost = tools gone | ✅ the MCP connection stays usable after a Player crash (tool-catalog cache + `player_status`/`player_log_read` local tools); `tools/list_changed` is pushed automatically when the Player starts after the connection |
+| 🛠 **Patched one-shot install** | ❌ no patch mechanism | ✅ registry fetch + SHA1 verification + per-version automatic patch-set matching |
+| 🌏 **Bilingual UI / self-update** | ❌ | ✅ `language` switching, `upgrade` self-update |
+
 ## Quick start
 
 ### Prerequisites
@@ -182,4 +196,4 @@ build-release.bat                  # Windows: one-shot build into releases/
 
 ### Relation to the official Unity CLI
 
-The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) covers Editor installation, project creation, version-control setup, and more; controlling the Editor itself requires the separate `com.unity.pipeline` package. This project does — and enhances — exactly that slice (patched one-shot install, instance discovery, command execution, MCP bridging); it does not install Editors, create projects, or integrate Unity accounts / Cloud. Version coverage aims beyond the official CLI: built-in patches make the upstream package run on Editors it does not support out of the box — **Unity 2022.3** is already stably supported.
+The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) covers Editor installation, project creation, version-control setup, and more; controlling the Editor itself requires the separate `com.unity.pipeline` package. This project does — and enhances — exactly that slice (patched one-shot install, instance discovery, command execution, MCP bridging); it does not install Editors, create projects, or integrate Unity accounts / Cloud. For the concrete list of enhancements over the official CLI, see [What goes beyond the official CLI](#what-goes-beyond-the-official-cli). Version coverage aims beyond the official CLI: built-in patches make the upstream package run on Editors it does not support out of the box — **Unity 2022.3** is already stably supported.
