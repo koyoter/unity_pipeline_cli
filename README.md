@@ -26,8 +26,6 @@
 | 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁稳定支持 Unity 2022.3 |
 | 🎮 **Player 调试全托管** | 📄 `--runtime`/`--runtime-path` 仅文档约定 | ✅ 官方同款 flag 全实现，另补 `--adb <包名>`：run-as 读描述符 + adb forward + 断线/应用重启自愈，`command` 与 MCP 共用 |
 | 🛟 **调试韧性** | ❌ 连接断即失效 | ✅ Player 崩溃后 MCP 连接仍可用（工具表缓存 + `player_status`/`player_log_read` 本地工具）；Player 晚于连接启动时自动推送 `tools/list_changed` |
-| 🛠 **带补丁的一键安装** | ❌ 无补丁机制 | ✅ registry 拉取 + SHA1 校验 + 按版本自动匹配补丁集 |
-| 🌏 **中英双语 / 自更新** | ❌ | ✅ `language` 切换、`upgrade` 自检测更新 |
 
 ## 快速上手
 
