@@ -128,7 +128,13 @@ Bare `configure mcp` prints all three sections at once — **Editor / desktop Pl
 
 `--runtime` (by process/executable name, matching the official CLI), `--runtime-path` (by where `.unity-pipeline-runtime-port` lives: Windows — the build dir; macOS — the `.app` bundle) target a local desktop Player; `--adb <package>` (plus `--adb-serial <serial>` with several devices) targets the Player on Android — fully managed by the CLI: the descriptor on the device is read via run-as (port + token), then an `adb forward` exposes it at 127.0.0.1, re-established automatically after disconnects / app restarts. `command` and `mcp` share this target selection.
 
-**Prerequisite**: the Player must be a **development build** with the runtime server enabled (`enableInDevelopmentBuilds`). serverInfo carries the target label (e.g. `unity-mcp@MyGame`), so multiple agent-side connections never blur together.
+**Prerequisite: to use pipeline capabilities in a built program, enable it in the Editor FIRST, then build** — whether the runtime pipeline is compiled in is decided at **build time**; enabling it afterwards has no effect on an already-built package (the most common pitfall in on-device debugging):
+
+1. In the Editor: Project Settings → Pipeline → Runtime → check `enableInDevelopmentBuilds` (or enable it via this tool's `settings.runtime_pipeline set` → recompile)
+2. Rebuild as a development build (with this tool's `build.run`, pass `options: ["Development", "AllowDebugging"]` — otherwise the package is not debuggable)
+3. Self-check: after launching the app, `adb logcat -d -s Unity` should show "Runtime server started successfully on port N"; if not, the runtime pipeline never made it in (evidence and fixes in [Android troubleshooting quick reference](#android-troubleshooting-quick-reference))
+
+serverInfo carries the target label (e.g. `unity-mcp@MyGame`), so multiple agent-side connections never blur together.
 
 ### Command coverage depends on the scripting backend
 

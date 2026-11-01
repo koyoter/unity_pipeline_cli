@@ -128,7 +128,13 @@ unity_pipeline_cli configure mcp --adb com.acme.mygame      # 只打 Android Pla
 
 `--runtime`（按进程/可执行名，官方 CLI 同款）、`--runtime-path`（按 `.unity-pipeline-runtime-port` 所在位置：Windows 传构建目录、macOS 传 `.app` 包路径）指向本地桌面 Player；`--adb <包名>`（多设备加 `--adb-serial <serial>`）指向 Android 上的 Player——CLI 全托管：run-as 读设备上的描述符（port + token）→ `adb forward` 转发到 127.0.0.1，断线 / 应用重启后自动重建。`command` 与 `mcp` 共用这套目标选择。
 
-**前提**：Player 必须是**开发构建**且启用了 runtime server（`enableInDevelopmentBuilds`）。serverInfo 名字带目标标识（如 `unity-mcp@MyGame`），agent 侧多个连接不会混。
+**前提：想打包后使用 pipeline 能力，必须先在编辑器里启用，再打包**——runtime pipeline 是否编进包，在**构建期**就定了；打包之后才开启，对已打出的包无效（这是真机联调最常见的坑）：
+
+1. Editor 里 Project Settings → Pipeline → Runtime → 勾选 `enableInDevelopmentBuilds`（或经本工具 `settings.runtime_pipeline set` 开启 → recompile）
+2. 重新打包：开发构建（用本工具 `build.run` 时记得 `options: ["Development", "AllowDebugging"]`，否则包不可调试）
+3. 自检：启动应用后 `adb logcat -d -s Unity` 应出现 "Runtime server started successfully on port N"；没出现就是没编进去（判据与修复见[Android 排障速查](#android-排障速查)）
+
+serverInfo 名字带目标标识（如 `unity-mcp@MyGame`），agent 侧多个连接不会混。
 
 ### 指令支持范围：脚本后端决定
 
