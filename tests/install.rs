@@ -407,6 +407,19 @@ fn embedded_patch_applies_to_cached_packages() {
                 "EvalCodeCompiler 的 using-guard 与类 gate 应各带一处 UNITY_ANDROID"
             );
 
+            // UnityApiCollector 是 0.10 新增类型，上游只在 Editor/桌面 debug 下
+            // 编译；RoslynCompilationService 的实现区（已扩到 UNITY_ANDROID）第
+            // 112 行无条件引用它，Android 打包报 CS0103。guard 必须同步。
+            let collector =
+                std::fs::read_to_string(dest.join("Runtime/Compilation/UnityApiCollector.cs"))
+                    .unwrap();
+            assert!(
+                collector.starts_with(
+                    "#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG) || UNITY_ANDROID\n"
+                ),
+                "UnityApiCollector 的类 gate 应带 UNITY_ANDROID，否则 Android 构建 CS0103"
+            );
+
             // 0.10 的 PipelineAnalytics 上游无 guard，直接绑
             // UnityEngine.Analytics（IAnalytic 等）——Analytics 模块被裁掉的工程
             // 编不过。@4 垫片整体包进 #if ENABLE_ANALYTICS，#else 空实现须覆盖

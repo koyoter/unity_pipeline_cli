@@ -1,0 +1,8 @@
+diff --git a/Runtime/Compilation/UnityApiCollector.cs b/Runtime/Compilation/UnityApiCollector.cs
+--- a/Runtime/Compilation/UnityApiCollector.cs
++++ b/Runtime/Compilation/UnityApiCollector.cs
+@@ -1,3 +1,3 @@
+-#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG)
++#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG) || UNITY_ANDROID
+ using System;
+ using System.Collections.Generic;

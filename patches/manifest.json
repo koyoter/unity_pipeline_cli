@@ -84,7 +84,8 @@
       "Editor.Console.EditorConsoleGroundTruth.cs@1.patch",
       "Editor.Testing.PipelineTestRunner.cs@1.patch",
       "Runtime.Compilation.RoslynCompilationService.cs@2.patch",
-      "Runtime.Compilation.EvalCodeCompiler.cs@2.patch"
+      "Runtime.Compilation.EvalCodeCompiler.cs@2.patch",
+      "Runtime.Compilation.UnityApiCollector.cs@1.patch"
     ]
   }
 }
