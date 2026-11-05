@@ -1,0 +1,21 @@
+diff --git a/Runtime/Compilation/EvalCodeCompiler.cs b/Runtime/Compilation/EvalCodeCompiler.cs
+--- a/Runtime/Compilation/EvalCodeCompiler.cs
++++ b/Runtime/Compilation/EvalCodeCompiler.cs
+@@ -5,7 +5,7 @@
+ using System.Reflection;
+ using System.Threading;
+ using System.Threading.Tasks;
+-#if UNITY_EDITOR || UNITY_STANDALONE
++#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_ANDROID
+ using UnityPipeline.Microsoft.CodeAnalysis;
+ using UnityPipeline.Microsoft.CodeAnalysis.CSharp;
+ #endif
+@@ -22,7 +22,7 @@
+     /// </summary>
+     static class EvalCodeCompiler
+     {
+-#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG)
++#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG) || UNITY_ANDROID
+ 
+         // The snippet follows a two-line preamble: the Object alias line, then `#line 1` so stack
+         // traces count the snippet's own lines. Diagnostics report raw lines, so subtracting one

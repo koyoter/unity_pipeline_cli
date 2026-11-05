@@ -1,0 +1,193 @@
+diff --git a/Runtime/Compilation/RoslynCompilationService.cs b/Runtime/Compilation/RoslynCompilationService.cs
+--- a/Runtime/Compilation/RoslynCompilationService.cs
++++ b/Runtime/Compilation/RoslynCompilationService.cs
+@@ -8,7 +8,7 @@
+ // Roslyn — the bundled UnityPipeline.Microsoft.CodeAnalysis* plugins — ships only to the Editor and
+ // desktop players (Runtime/Plugins/CodeAnalysis/*.dll.meta); mobile/console players get the
+ // Roslyn-free stubs below.
+-#if UNITY_EDITOR || UNITY_STANDALONE
++#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_ANDROID
+ using UnityPipeline.Microsoft.CodeAnalysis;
+ using UnityPipeline.Microsoft.CodeAnalysis.CSharp;
+ using UnityPipeline.Microsoft.CodeAnalysis.Emit;
+@@ -32,7 +32,11 @@
+ #endif
+     static class RoslynCompilationService
+     {
+-#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG)
++// UNITY_ANDROID enables the real implementation on Mono players: Assembly.Load(byte[]) works
++// there (JIT backend), only the reference lookup needs an APK-aware source (see
++// GetMetadataReferences). On an Android IL2CPP build this code compiles but the load below
++// fails, which is mapped to a clear failure result rather than a crash.
++#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG) || UNITY_ANDROID
+ 
+         /// <summary>
+         /// Compile source code to assembly with customizable options.
+@@ -171,9 +175,34 @@
+                     Assembly assembly = null;
+                     if (!request.SkipLoad)
+                     {
+-                        assembly = pdbBytes != null
+-                            ? PipelineUtils.LoadFromBytes(assemblyBytes, pdbBytes)
+-                            : PipelineUtils.LoadFromBytes(assemblyBytes);
++                        try
++                        {
++                            assembly = pdbBytes != null
++                                ? PipelineUtils.LoadFromBytes(assemblyBytes, pdbBytes)
++                                : PipelineUtils.LoadFromBytes(assemblyBytes);
++                        }
++                        catch (Exception loadEx)
++                        {
++                            // Android IL2CPP (and any backend without Assembly.Load byte support):
++                            // say which backend capability is missing instead of surfacing a bare
++                            // "Compilation exception" that points nowhere actionable.
++                            return new CompilationResult
++                            {
++                                Success = false,
++                                Diagnostics = new List<DiagnosticInfo>
++                                {
++                                    new DiagnosticInfo
++                                    {
++                                        Severity = "error",
++                                        Message = "Script eval needs the Mono scripting backend " +
++                                                  $"(Assembly.Load of emitted bytes failed here): {loadEx.Message}",
++                                        Line = 0,
++                                        Column = 0,
++                                        Id = "ROSLYN002"
++                                    }
++                                }
++                            };
++                        }
+                     }
+ 
+                     MethodInfo scriptEntryPoint = null;
+@@ -298,6 +327,39 @@
+         public static List<MetadataReference> GetMetadataReferences(string[] additionalPrefixes = null)
+         {
+             var references = new List<MetadataReference>();
++
++            // Android: every managed assembly is packed inside base.apk (assets/bin/Data/Managed)
++            // and Mono loads it from memory, so Assembly.Location is empty and the file-path
++            // lookup further down filters everything out. Read the same DLLs back through the
++            // AssetManager and hand Roslyn in-memory references instead. Under IL2CPP the
++            // compile would still succeed here; the Load below is what reports the backend.
++            if (!Application.isEditor && Application.platform == RuntimePlatform.Android)
++            {
++                var androidPrefixes = new List<string>
++                {
++                    "UnityEngine", "Assembly-CSharp", "netstandard", "mscorlib", "System.", "Unity.Pipeline"
++                };
++                if (additionalPrefixes != null)
++                {
++                    androidPrefixes.AddRange(additionalPrefixes);
++                }
++                foreach (var androidAssembly in PipelineUtils.GetLoadedAssemblies())
++                {
++                    if (androidAssembly.IsDynamic)
++                        continue;
++                    var androidName = androidAssembly.GetName().Name;
++                    if (string.IsNullOrEmpty(androidName) ||
++                        !androidPrefixes.Any(prefix => androidName.StartsWith(prefix)))
++                        continue;
++                    var androidStream = AndroidApkAssemblies.Open($"{androidName}.dll");
++                    if (androidStream != null)
++                    {
++                        references.Add(MetadataReference.CreateFromStream(androidStream));
++                    }
++                }
++                return references;
++            }
++
+             var assemblies = PipelineUtils.GetLoadedAssemblies()
+                 .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(PipelineUtils.GetLoadedAssemblyPath(a)));
+ 
+@@ -356,6 +418,80 @@
+         }
+ 
+         /// <summary>
++        /// Reads managed assemblies out of the APK through the Android AssetManager (UGF-style
++        /// raw-JNI bridge): open("bin/Data/Managed/<c>Name.dll</c>") then InputStream.read([BII)
++        /// via an explicit method id, copying the JNI array back with ConvertFromJNIArray.
++        /// Deliberately raw JNI — Unity's AndroidJavaObject.Call copies managed byte[] arguments
++        /// one way only (managed → JNI), so a reflection-based read reports a correct byte count
++        /// but hands back a zeroed buffer. Main thread only (JNI; eval is MainThreadRequired
++        /// anyway). Null when the entry cannot be opened or read; the caller compiles without
++        /// that reference and reports the fallout.
++        /// </summary>
++        private static class AndroidApkAssemblies
++        {
++            private static AndroidJavaObject s_Assets;
++            private static IntPtr s_ReadMethodId;
++            private static readonly object s_Lock = new object();
++
++            internal static Stream Open(string assemblyFileName)
++            {
++                try
++                {
++                    lock (s_Lock)
++                    {
++                        if (s_Assets == null)
++                        {
++                            var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
++                            var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
++                            s_Assets = activity.Call<AndroidJavaObject>("getAssets");
++                            activity.Dispose();
++                            unityPlayer.Dispose();
++                            var inputStreamClass = AndroidJNI.FindClass("java/io/InputStream");
++                            s_ReadMethodId = AndroidJNIHelper.GetMethodID(inputStreamClass, "read", "([BII)I");
++                            AndroidJNI.DeleteLocalRef(inputStreamClass);
++                        }
++
++                        using (var input = s_Assets.Call<AndroidJavaObject>("open", $"bin/Data/Managed/{assemblyFileName}"))
++                        {
++                            var output = new MemoryStream();
++                            var args = new jvalue[3];
++                            var chunk = AndroidJNI.NewSByteArray(64 * 1024);
++                            try
++                            {
++                                args[0].l = chunk;
++                                args[1].i = 0;
++                                args[2].i = 64 * 1024;
++                                int read;
++                                while ((read = AndroidJNI.CallIntMethod(
++                                           input.GetRawObject(), s_ReadMethodId, args)) > 0)
++                                {
++                                    var managed = AndroidJNIHelper.ConvertFromJNIArray<sbyte[]>(chunk);
++                                    // sbyte[] and byte[] share the same layout; BlockCopy reinterprets without a
++                                    // per-element loop (MemoryStream.Write needs the unsigned type).
++                                    var bytes = new byte[read];
++                                    Buffer.BlockCopy(managed, 0, bytes, 0, read);
++                                    output.Write(bytes, 0, read);
++                                }
++                            }
++                            finally
++                            {
++                                AndroidJNI.DeleteLocalRef(chunk);
++                            }
++                            if (output.Length == 0)
++                                return null;
++                            output.Position = 0;
++                            return output;
++                        }
++                    }
++                }
++                catch (Exception)
++                {
++                    return null;
++                }
++            }
++        }
++
++        /// <summary>
+         /// Convert Roslyn diagnostics to DiagnosticInfo list with optional line number adjustment.
+         /// Handles line number offset for wrapped code scenarios.
+         /// </summary>
+@@ -479,7 +615,7 @@
+         /// </summary>
+         internal static void SnapshotProjectDefines() => ProjectDefines();
+ 
+-#if UNITY_EDITOR || UNITY_STANDALONE
++#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_ANDROID
+         /// <summary>Parse options carrying <paramref name="preprocessorSymbols"/>, or the project's
+         /// define set (see <see cref="ProjectDefines"/>) when null. Every parse of user source in the
+         /// reload/eval pipeline should use this so #if regions match the running assemblies.

@@ -113,7 +113,7 @@ fn collect_patch_sources_orders_system_then_custom() {
 /// Version → patch-set selection against the real embedded manifest:
 /// cutoffs are prerelease-aware (`0.7.0-exp.1 < 0.7.0`), highest matching
 /// `from` wins, older versions fall to `legacy` (from `0.0.0`), and
-/// anything newer than the last cutoff sticks to it (0.10.0 → 0.9).
+/// anything newer than the last cutoff sticks to it (0.11.0 → 0.10).
 #[test]
 fn select_patch_set_matches_version_cutoffs() {
     let manifest = parse_manifest().unwrap();
@@ -133,7 +133,9 @@ fn select_patch_set_matches_version_cutoffs() {
     assert_eq!(set("0.9.1-exp.0"), "0.9");
     assert_eq!(set("0.9.1-exp.1"), "0.9.1");
     assert_eq!(set("0.9.1"), "0.9.1");
-    assert_eq!(set("0.10.0"), "0.9.1");
+    assert_eq!(set("0.10.0-exp.0"), "0.9.1");
+    assert_eq!(set("0.10.0-exp.1"), "0.10");
+    assert_eq!(set("0.10.0"), "0.10");
 }
 
 /// 最低版本门槛：0.6.0-exp.1 及以上保留，更低的（含 0.6.0-exp.0）和解析
@@ -225,12 +227,19 @@ fn embedded_patch_applies_to_cached_packages() {
 
     for src in candidates {
         // A previous install run patches the extraction in place, so a
-        // dirty cache no longer matches any patch set's old-state.
+        // dirty cache no longer matches any patch set's old-state. 旧档补
+        // AssetCommands 时引入 UNITY_2022_3 宏；0.10 档不再碰它，改以
+        // RoslynCompilationService 的 UNITY_ANDROID（pristine 包零出现）
+        // 作为补丁痕迹。
         let asset_cs = src.join("Editor/Commands/Assets/AssetCommands.cs");
-        if std::fs::read_to_string(&asset_cs)
+        let roslyn_cs = src.join("Runtime/Compilation/RoslynCompilationService.cs");
+        let dirty = std::fs::read_to_string(&asset_cs)
             .map(|s| s.contains("UNITY_2022_3"))
             .unwrap_or(false)
-        {
+            || std::fs::read_to_string(&roslyn_cs)
+                .map(|s| s.contains("UNITY_ANDROID"))
+                .unwrap_or(false);
+        if dirty {
             eprintln!("skip dirty cache: {}", src.display());
             continue;
         }
@@ -277,20 +286,23 @@ fn embedded_patch_applies_to_cached_packages() {
         dry_run_patches(&patches, &dest).expect("dry_run 应通过");
         apply_patches(&patches, &dest).expect("apply 应成功");
 
-        // Sanity: the applied patch introduced a `UNITY_2022_3` guard.
-        let cs =
-            std::fs::read_to_string(dest.join("Editor/Commands/Assets/AssetCommands.cs"))
-                .unwrap();
-        assert!(
-            cs.contains("UNITY_2022_3"),
-            "patch 后的文件应包含 UNITY_2022_3 宏"
-        );
+        // Sanity (≤0.9.1 sets): the applied patch introduced a
+        // `UNITY_2022_3` guard. 0.10 档不再带 2022 垫片，AssetCommands 不动。
+        if patch_set != "0.10" {
+            let cs =
+                std::fs::read_to_string(dest.join("Editor/Commands/Assets/AssetCommands.cs"))
+                    .unwrap();
+            assert!(
+                cs.contains("UNITY_2022_3"),
+                "patch 后的文件应包含 UNITY_2022_3 宏"
+            );
+        }
         // Sanity (v0.7+ sets): serializedVersion downgraded, and the
         // Unsafe .meta's platformData block must be byte-identical to
         // CSharp's (Editor-only). Guards against malformed block
         // reconstruction — a missing `settings:` line once made Unity
         // uncheck every platform for the Unsafe plugin.
-        if patch_set == "0.7" || patch_set == "0.8" || patch_set == "0.9" {
+        if patch_set == "0.7" || patch_set == "0.8" || patch_set == "0.9" || patch_set == "0.10" {
             let meta_dir = dest.join("Runtime/Plugins/CodeAnalysis");
             let platform_block = |name: &str| -> Vec<String> {
                 let text =
@@ -336,7 +348,8 @@ fn embedded_patch_applies_to_cached_packages() {
         // `#if ENABLE_ANALYTICS` and a no-op stand-in follows in `#else`. The
         // stand-in must keep the two entry points the package calls, or the
         // Editor assembly stops compiling on 2022.3 (where the guard is off).
-        if patch_set == "0.9" {
+        // 0.10 档弃掉该垫片（上游不再 guard，min Unity 6000.0）。
+        if patch_set == "0.9" || patch_set == "0.9.1" {
             let analytics =
                 std::fs::read_to_string(dest.join("Editor/PipelineAnalytics.cs")).unwrap();
             assert!(
@@ -360,6 +373,72 @@ fn embedded_patch_applies_to_cached_packages() {
                     && stub.contains("SendSessionStoppedIfStarted()")
                     && stub.ends_with("#endif\n"),
                 "#else 空实现应保留两个入口点并以 #endif 收尾"
+            );
+        }
+
+        // 0.10 档：Android Mono eval 移植（gate + APK 引用）须落在重写后的
+        // script 版 eval 上；2022 垫片不得再出现。
+        if patch_set == "0.10" {
+            let roslyn =
+                std::fs::read_to_string(dest.join("Runtime/Compilation/RoslynCompilationService.cs"))
+                    .unwrap();
+            assert_eq!(
+                roslyn.matches("#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_ANDROID").count(),
+                2,
+                "外层与 SnapshotProjectDefines 两处 gate 应带 UNITY_ANDROID"
+            );
+            assert!(
+                roslyn
+                    .contains("#if UNITY_EDITOR || (UNITY_STANDALONE && DEBUG) || UNITY_ANDROID"),
+                "内层 gate 应带 UNITY_ANDROID"
+            );
+            assert!(
+                roslyn.contains("class AndroidApkAssemblies")
+                    && roslyn.contains("AndroidApkAssemblies.Open(")
+                    && roslyn.contains(r#""ROSLYN002""#),
+                "APK 内读 DLL 的 Android 分支与 Assembly.Load 失败兜底应就位"
+            );
+            let eval =
+                std::fs::read_to_string(dest.join("Runtime/Compilation/EvalCodeCompiler.cs"))
+                    .unwrap();
+            assert_eq!(
+                eval.matches("|| UNITY_ANDROID").count(),
+                2,
+                "EvalCodeCompiler 的 using-guard 与类 gate 应各带一处 UNITY_ANDROID"
+            );
+
+            // 0.10 的 PipelineAnalytics 上游无 guard，直接绑
+            // UnityEngine.Analytics（IAnalytic 等）——Analytics 模块被裁掉的工程
+            // 编不过。@4 垫片整体包进 #if ENABLE_ANALYTICS，#else 空实现须覆盖
+            // 0.10 全部外部调用面（diagnostics record_analytics/recent_analytics
+            // 的 IsRecording/RecentEvents/SentEvent + 两个上报入口）。
+            let analytics =
+                std::fs::read_to_string(dest.join("Editor/PipelineAnalytics.cs")).unwrap();
+            assert!(
+                analytics.starts_with("#if ENABLE_ANALYTICS\n"),
+                "0.10 analytics 垫片应把原实现整体括进 #if ENABLE_ANALYTICS"
+            );
+            let (real, stub) = analytics
+                .split_once("#else\n")
+                .expect("0.10 analytics 垫片应提供 #else 空实现");
+            assert!(
+                real.contains("EditorAnalytics.SendAnalytic"),
+                "#if 分支应保留上游 analytics 实现"
+            );
+            assert!(
+                !stub.contains("EditorAnalytics.SendAnalytic")
+                    && !stub.contains("IAnalytic"),
+                "#else 空实现不得再触碰 analytics API"
+            );
+            assert!(
+                stub.contains("class PipelineAnalytics")
+                    && stub.contains("IsRecording")
+                    && stub.contains("RecentEvents")
+                    && stub.contains("class SentEvent")
+                    && stub.contains("RecordCommandExecuted(in CommandExecutionInfo info)")
+                    && stub.contains("SendSessionStoppedIfStarted()")
+                    && stub.ends_with("#endif\n"),
+                "#else 空实现应覆盖 0.10 的五成员调用面并以 #endif 收尾"
             );
         }
     }

@@ -130,7 +130,7 @@ serverInfo 名字带目标标识（如 `unity-mcp@MyGame`），agent 侧多个�
 
 ### 指令支持范围：脚本后端决定
 
-Player 端 runtime server 暴露 18 条 runtime 指令，但**能力按打包时的脚本后端与平台分档**——要全部指令，打包选 **Mono**：
+Player 端 runtime server 暴露一组 runtime 指令（0.9.1 为 18 条，0.10 起 20 条），但**能力按打包时的脚本后端与平台分档**——要全部指令，打包选 **Mono**：
 
 | 能力 | 桌面 Mono dev 构建 | 桌面 IL2CPP dev 构建 | Android（Mono dev） | Android / iOS（IL2CPP） |
 | :--- | :--- | :--- | :--- | :--- |
