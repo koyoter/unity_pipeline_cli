@@ -288,7 +288,7 @@ fn embedded_patch_applies_to_cached_packages() {
 
         // Sanity (≤0.9.1 sets): the applied patch introduced a
         // `UNITY_2022_3` guard. 0.10 档不再带 2022 垫片，AssetCommands 不动。
-        if patch_set != "0.10" {
+        if patch_set != "0.10" && patch_set != "1.0" {
             let cs =
                 std::fs::read_to_string(dest.join("Editor/Commands/Assets/AssetCommands.cs"))
                     .unwrap();
@@ -302,7 +302,12 @@ fn embedded_patch_applies_to_cached_packages() {
         // CSharp's (Editor-only). Guards against malformed block
         // reconstruction — a missing `settings:` line once made Unity
         // uncheck every platform for the Unsafe plugin.
-        if patch_set == "0.7" || patch_set == "0.8" || patch_set == "0.9" || patch_set == "0.10" {
+        if patch_set == "0.7"
+            || patch_set == "0.8"
+            || patch_set == "0.9"
+            || patch_set == "0.10"
+            || patch_set == "1.0"
+        {
             let meta_dir = dest.join("Runtime/Plugins/CodeAnalysis");
             let platform_block = |name: &str| -> Vec<String> {
                 let text =
@@ -452,6 +457,79 @@ fn embedded_patch_applies_to_cached_packages() {
                     && stub.contains("SendSessionStoppedIfStarted()")
                     && stub.ends_with("#endif\n"),
                 "#else 空实现应覆盖 0.10 的五成员调用面并以 #endif 收尾"
+            );
+        }
+
+        // 1.0 档：1.0.0-pre.1 的 Scene Preview 用 Unity 6 专属的
+        // UnityEditor.Build.Profile 编译期引用，2022.3 编译炸（build 命令链
+        // 上游已自带反射垫片，不受影响）。补丁方案：五个文件把 using 换成
+        // `#if UNITY_6000_0_OR_NEWER` 原样 / `#else` 别名到 2022 专用 stub，
+        // Engine 文件追加 stub 类型本体——上游代码对各处 profile 为 null
+        // 已有降级路径，2022.3 上 Scene Preview 因此整体走"无 profile"分支。
+        if patch_set == "1.0" {
+            let alias =
+                "using BuildProfile = Unity.Pipeline.Editor.Previews.ScenePreviewBuildProfileStub;";
+            for rel in [
+                "Editor/EditorPipelineConfigEditor.cs",
+                "Editor/Previews/ScenePreview/PreviewBuildCheck.cs",
+                "Editor/Previews/ScenePreview/PreviewSceneUsage.cs",
+                "Editor/Previews/ScenePreview/ScenePreviewEngine.cs",
+                "Editor/Previews/ScenePreview/ScenePreviewSettings.cs",
+            ] {
+                let cs = std::fs::read_to_string(dest.join(rel)).unwrap();
+                assert!(
+                    cs.contains(
+                        "#if UNITY_6000_0_OR_NEWER\nusing UnityEditor.Build.Profile;\n#else\n"
+                    ),
+                    "{rel} 的 using 应在 UNITY_6000_0_OR_NEWER 下保留上游原样"
+                );
+                assert!(cs.contains(alias), "{rel} 应把 BuildProfile 别名到 2022 stub");
+            }
+            let engine = std::fs::read_to_string(
+                dest.join("Editor/Previews/ScenePreview/ScenePreviewEngine.cs"),
+            )
+            .unwrap();
+            assert!(
+                engine.contains(
+                    "internal static BuildProfile GetActiveBuildProfile() => BuildProfile.GetActiveBuildProfile();"
+                ),
+                "Engine 的真实 GetActiveBuildProfile 不得被 stub hunk 误删"
+            );
+            assert!(
+                engine.contains("#if !UNITY_6000_0_OR_NEWER")
+                    && engine
+                        .contains("internal class ScenePreviewBuildProfileStub : ScriptableObject")
+                    && engine.contains(
+                        "internal static ScenePreviewBuildProfileStub GetActiveBuildProfile() => null;"
+                    )
+                    && engine.contains("EditorBuildSettingsScene[] scenes"),
+                "Engine 文件应追加 2022 stub（含 scriptingDefines/scenes 字段面）且仅限 Unity 6 以下"
+            );
+            let config = std::fs::read_to_string(dest.join("Editor/EditorPipelineConfigEditor.cs"))
+                .unwrap();
+            assert!(
+                config.contains(
+                    "#else\n            EditorGUILayout.Space();\n            EditorGUILayout.HelpBox(\n                \"Scene Preview requires Unity 6"
+                ),
+                "2022 上 Scene Preview 设置段应降级为提示框，不得显示死按钮"
+            );
+
+            // 1.0.0-pre.1 的 PipelineTestRunner 新增编译期 TestRunnerApi.CancelTestRun
+            // （TF 1.4 API，2022.3 的 TF 1.1.33 没有，CS0117）。@2 延续 @1 的反射修：
+            // 运行期解析，解析不到时 cancel 报"无法停止"（pre-1.4 行为）。@1 的
+            // UnregisterTestCallback 反射修也必须随 @2 带上（1.0 档不再引用 @1）。
+            let runner = std::fs::read_to_string(dest.join("Editor/Testing/PipelineTestRunner.cs"))
+                .unwrap();
+            assert!(
+                !runner.contains("TestRunnerApi.CancelTestRun")
+                    && !runner.contains("TestRunnerApi.UnregisterTestCallback"),
+                "不得再有编译期 CancelTestRun / UnregisterTestCallback 调用"
+            );
+            assert!(
+                runner.contains("\"CancelTestRun\"")
+                    && runner.contains("internal static Func<string, bool> s_CancelTestRun = id =>")
+                    && runner.contains("s_UnregisterTestCallback?.Invoke(null, new object[] { collector })"),
+                "s_CancelTestRun 应改为反射解析 CancelTestRun，且保留 @1 的 UnregisterTestCallback 反射修"
             );
         }
     }

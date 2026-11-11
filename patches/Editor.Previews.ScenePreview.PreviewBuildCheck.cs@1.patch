@@ -1,0 +1,15 @@
+diff --git a/Editor/Previews/ScenePreview/PreviewBuildCheck.cs b/Editor/Previews/ScenePreview/PreviewBuildCheck.cs
+--- a/Editor/Previews/ScenePreview/PreviewBuildCheck.cs
++++ b/Editor/Previews/ScenePreview/PreviewBuildCheck.cs
+@@ -2,7 +2,11 @@ using Unity.Pipeline.Config;
+ using Unity.Pipeline.Editor.BuildProcessors;
+ using UnityEditor;
+ using UnityEditor.Build;
++#if UNITY_6000_0_OR_NEWER
+ using UnityEditor.Build.Profile;
++#else
++using BuildProfile = Unity.Pipeline.Editor.Previews.ScenePreviewBuildProfileStub;
++#endif
+ using UnityEditor.Build.Reporting;
+ 
+ namespace Unity.Pipeline.Editor.Previews

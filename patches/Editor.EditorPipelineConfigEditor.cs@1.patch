@@ -1,0 +1,36 @@
+diff --git a/Editor/EditorPipelineConfigEditor.cs b/Editor/EditorPipelineConfigEditor.cs
+--- a/Editor/EditorPipelineConfigEditor.cs
++++ b/Editor/EditorPipelineConfigEditor.cs
+@@ -1,7 +1,11 @@
+ using System.IO;
+ using Unity.Pipeline.Editor.Previews;
+ using UnityEditor;
++#if UNITY_6000_0_OR_NEWER
+ using UnityEditor.Build.Profile;
++#else
++using BuildProfile = Unity.Pipeline.Editor.Previews.ScenePreviewBuildProfileStub;
++#endif
+ using UnityEngine;
+ 
+ namespace Unity.Pipeline.Editor
+@@ -346,6 +350,7 @@ namespace Unity.Pipeline.Editor
+         /// </summary>
+         private void DrawScenePreviewSection()
+         {
++#if UNITY_6000_0_OR_NEWER
+             EditorGUILayout.Space();
+             EditorGUILayout.LabelField("Scene Preview", EditorStyles.boldLabel);
+ 
+@@ -395,6 +400,12 @@ namespace Unity.Pipeline.Editor
+                 EditorGUILayout.LabelField("Settings Asset", File.Exists(ScenePreviewSettings.AssetPath)
+                     ? $"{ScenePreviewSettings.AssetPath} ({(assemblyCount > 0 ? $"{assemblyCount} preview assemblies" : "no preview assemblies: no filtering")})"
+                     : "not created");
++#else
++            EditorGUILayout.Space();
++            EditorGUILayout.HelpBox(
++                "Scene Preview requires Unity 6: previews are built from a Build Profile, which this Unity version does not have.",
++                MessageType.Info);
++#endif
+         }
+ 
+         private static string Ago(System.DateTime? utc)

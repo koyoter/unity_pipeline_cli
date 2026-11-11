@@ -1,0 +1,15 @@
+diff --git a/Editor/Previews/ScenePreview/PreviewSceneUsage.cs b/Editor/Previews/ScenePreview/PreviewSceneUsage.cs
+--- a/Editor/Previews/ScenePreview/PreviewSceneUsage.cs
++++ b/Editor/Previews/ScenePreview/PreviewSceneUsage.cs
+@@ -4,7 +4,11 @@ using System.Linq;
+ using UnityEditor;
+ using UnityEditor.AssetImporters;
+ using UnityEditor.Build.Content;
++#if UNITY_6000_0_OR_NEWER
+ using UnityEditor.Build.Profile;
++#else
++using BuildProfile = Unity.Pipeline.Editor.Previews.ScenePreviewBuildProfileStub;
++#endif
+ using UnityEditor.SceneManagement;
+ using UnityEditorInternal;
+ using UnityEngine;

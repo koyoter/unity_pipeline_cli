@@ -1,0 +1,15 @@
+diff --git a/Editor/Previews/ScenePreview/ScenePreviewSettings.cs b/Editor/Previews/ScenePreview/ScenePreviewSettings.cs
+--- a/Editor/Previews/ScenePreview/ScenePreviewSettings.cs
++++ b/Editor/Previews/ScenePreview/ScenePreviewSettings.cs
+@@ -3,7 +3,11 @@ using System.Collections.Generic;
+ using System.IO;
+ using System.Linq;
+ using UnityEditor;
++#if UNITY_6000_0_OR_NEWER
+ using UnityEditor.Build.Profile;
++#else
++using BuildProfile = Unity.Pipeline.Editor.Previews.ScenePreviewBuildProfileStub;
++#endif
+ using UnityEngine;
+ 
+ namespace Unity.Pipeline.Editor.Previews

@@ -1,0 +1,47 @@
+diff --git a/Editor/Previews/ScenePreview/ScenePreviewEngine.cs b/Editor/Previews/ScenePreview/ScenePreviewEngine.cs
+--- a/Editor/Previews/ScenePreview/ScenePreviewEngine.cs
++++ b/Editor/Previews/ScenePreview/ScenePreviewEngine.cs
+@@ -4,7 +4,11 @@ using System.Reflection;
+ using UnityEditor;
+ using UnityEditor.AssetImporters;
+ using UnityEditor.Build.Content;
++#if UNITY_6000_0_OR_NEWER
+ using UnityEditor.Build.Profile;
++#else
++using BuildProfile = Unity.Pipeline.Editor.Previews.ScenePreviewBuildProfileStub;
++#endif
+ using UnityEditor.Experimental;
+ using UnityEngine;
+ 
+@@ -108,4 +112,31 @@ namespace Unity.Pipeline.Editor.Previews
+         /// <summary>The active build profile, or null when the classic platform settings are active.</summary>
+         internal static BuildProfile GetActiveBuildProfile() => BuildProfile.GetActiveBuildProfile();
+     }
++#if !UNITY_6000_0_OR_NEWER
++    /// <summary>
++    /// Stand-in for the Unity 6 <c>UnityEditor.Build.Profile.BuildProfile</c>, which does not exist
++    /// on earlier editors: the package's compatibility patches alias <c>BuildProfile</c> to this
++    /// type there, so the Scene Preview files compile unchanged. No asset of this type can exist
++    /// and every static comes back null, which is the "no build profile" state all callers
++    /// already handle. Compiled only below Unity 6; on Unity 6 the alias resolves to the real type.
++    /// </summary>
++    internal class ScenePreviewBuildProfileStub : ScriptableObject
++    {
++        public string[] scriptingDefines;
++        public bool overrideGlobalScenes;
++        public EditorBuildSettingsScene[] scenes;
++
++        internal static ScenePreviewBuildProfileStub GetActiveBuildProfile() => null;
++
++        internal EditorBuildSettingsScene[] GetScenesForBuild() =>
++            System.Array.Empty<EditorBuildSettingsScene>();
++    }
++
++    /// <summary>Stand-in for the Unity 6 <c>UnityEditor.Build.Profile.StandaloneBuildSubtarget</c>.</summary>
++    internal enum StandaloneBuildSubtarget
++    {
++        Player,
++        Default,
++    }
++#endif
+ }
