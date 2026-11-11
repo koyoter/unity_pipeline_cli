@@ -19,7 +19,7 @@ This tool adds capabilities the official CLI does not have (or only documents as
 
 | Enhancement | Official CLI | This tool |
 | :--- | :--- | :--- |
-| 🤖 **MCP bridge (headline)** | ❌ no MCP form | Editor and Player command catalogs are automatically exposed as MCP tools — pure forwarding with zero hard-coded names, compatible with package 0.6 → 0.9, plug-and-play for AI clients |
+| 🤖 **MCP bridge (headline)** | ❌ no MCP form | Editor and Player command catalogs are automatically exposed as MCP tools — pure forwarding with zero hard-coded names, compatible with package 0.6 → 1.0, plug-and-play for AI clients |
 | 📱 **Android Mono dynamic execution** | ❌ upstream compiles the Roslyn path out of Android, `script.eval` reports "Platform Not Supported" | ✅ enabled by a built-in patch |
 | 🧩 **Older Editor compatibility** | ❌ supports only some versions out of the box | ✅ built-in patches stably support Unity 2022.3 |
 | 🎮 **Fully managed Player debugging** | ✅ desktop: `--runtime`/`--runtime-path`; on Android you must handle adb forwarding and fetch the debug port/token yourself | ✅ those same flags plus `--adb <package>`: descriptor via run-as (port + token) → adb forward → self-healing after disconnects/app restarts, **zero manual steps**, shared by `command` and MCP |
@@ -69,7 +69,7 @@ Features:
 - The command catalog maps automatically onto tools; commands that appear after an Editor domain reload are pushed to the client via `tools/list_changed`
 - Stale connections (Editor restart / domain reload) are re-discovered automatically; a busy Editor is retried honoring the server's `Retry-After` (up to 30 attempts); a modal dialog blocking the Editor fails fast and forwards the guidance the Editor published
 - Any command returning a PNG (the capture family) automatically comes back as MCP image content; any command carrying a `timeout` / `timeout_s` (seconds) argument has it honored end to end
-- Tool names derive from the server catalog (`asset.create`-style dotted full names), unique across groups; the MCP layer hard-codes no command names and works with package 0.6 → 0.9
+- Tool names derive from the server catalog (`asset.create`-style dotted full names), unique across groups; the MCP layer hard-codes no command names and works with package 0.6 → 1.0
 - Bearer tokens in any returned text are replaced with `[redacted]`
 - Speaks MCP protocol versions `2024-11-05` / `2025-03-26` / `2025-06-18`
 
@@ -135,7 +135,7 @@ The player's runtime server exposes 18 runtime commands, but **capability tiers 
 | Capability | Desktop Mono dev build | Desktop IL2CPP dev build | Android (Mono dev) | Android / iOS (IL2CPP) |
 | :--- | :--- | :--- | :--- | :--- |
 | Runtime server and the remaining commands (`console.get`, `runtime status`, input, capture, `script.methodreload`, …) | ✅ | ✅ | ✅ | ✅ |
-| `script.eval` / `script.eval_file` (dynamic compile & run) | ✅ | ❌ compiles, but `Assembly.Load` is unavailable under IL2CPP | ✅ enabled by this tool's patch (upstream compiles the Roslyn path and its reference lookup out on Android; the patch reads the DLLs from the APK via AssetManager streams instead — first call JIT-warms Roslyn, start with `--timeout 120`) | ❌ `Assembly.Load` unavailable (upstream compiles the Roslyn path out of non-desktop platforms entirely — "Platform Not Supported") |
+| `script.eval` (dynamic compile & run; the deprecated `script.eval_file` was removed in package 1.0) | ✅ | ❌ compiles, but `Assembly.Load` is unavailable under IL2CPP | ✅ enabled by this tool's patch (upstream compiles the Roslyn path and its reference lookup out on Android; the patch reads the DLLs from the APK via AssetManager streams instead — first call JIT-warms Roslyn, start with `--timeout 120`) | ❌ `Assembly.Load` unavailable (upstream compiles the Roslyn path out of non-desktop platforms entirely — "Platform Not Supported") |
 | `script.methodreload` hot reload | ✅ | ✅ (runs through the IL interpreter: restricted C# subset + fixed host surface) | ✅ (same) | ✅ (same) |
 
 Prefer `script.methodreload` for dynamic logic (works on every backend); `script.eval` is usable on desktop Mono and — via this tool's patch — Android Mono dev builds.

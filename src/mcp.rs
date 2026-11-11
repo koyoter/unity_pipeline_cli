@@ -13,7 +13,8 @@ use serde_json::{json, Value};
 
 use crate::pipeline::{
     self, command_input_schema, ensure_reachable, execute, fetch_commands,
-    is_failed_eval_envelope, is_transient, retry_delay, tool_name, ExecBudget, Target,
+    is_failed_eval_envelope, is_transient, retry_delay, tool_name, ExecBudget, PipelineCommand,
+    Target,
 };
 
 /// Newest protocol revision this server speaks; also the fallback when a client asks for one we
@@ -960,13 +961,33 @@ fn fetch_tools(target: &Target) -> Result<Vec<Value>> {
             // [`pipeline::tool_name`].
             let name = tool_name(&cmd)?;
             let description = cmd.description.clone().unwrap_or_else(|| name.clone());
-            Some(json!({
+            let mut tool = json!({
                 "name": name,
                 "description": description,
                 "inputSchema": command_input_schema(&cmd),
-            }))
+            });
+            if let Some(annotations) = effect_annotations(&cmd) {
+                tool["annotations"] = annotations;
+            }
+            Some(tool)
         })
         .collect())
+}
+
+/// Map the catalog's effect hints (package 1.0+) onto the MCP `annotations` slot, the standard
+/// place hosts read `readOnlyHint` / `destructiveHint` / `idempotentHint` from to decide
+/// confirmation gates. A command that declares no effect gets no annotations at all — MCP
+/// defaults (assumed not read-only, assumed destructive) then apply, exactly the conservative
+/// fallback upstream's "the client decides on its own" calls for.
+fn effect_annotations(cmd: &PipelineCommand) -> Option<Value> {
+    if cmd.read_only.is_none() && cmd.destructive.is_none() && cmd.idempotent.is_none() {
+        return None;
+    }
+    Some(json!({
+        "readOnlyHint": cmd.read_only.unwrap_or(false),
+        "destructiveHint": cmd.destructive.unwrap_or(false),
+        "idempotentHint": cmd.idempotent.unwrap_or(false),
+    }))
 }
 
 /// ---- Runtime-target local tools ----

@@ -201,6 +201,9 @@ fn empty_cmd() -> pipeline::PipelineCommand {
         description: None,
         parameters: Vec::new(),
         schema: None,
+        read_only: None,
+        destructive: None,
+        idempotent: None,
     }
 }
 
@@ -260,4 +263,36 @@ fn shape_tool_result_triggers_on_shape_alone() {
     let plain = shape_tool_result(&json!({"answer": 42}), None);
     assert_eq!(plain["content"][0]["type"], "text");
     assert!(plain.get("isError").is_none());
+}
+
+/// 包 1.0+ 的 effect 提示应映射到 MCP 标准的 annotations 槽；未声明 effect
+/// 的命令必须整体不带 annotations（"未声明"≠"声明为 false"，宿主按自己的
+/// 保守默认走）。
+#[test]
+fn effect_annotations_map_to_mcp_hints() {
+    // 全部经 serde 构造，顺带覆盖 catalog JSON → 结构体的反序列化路径。
+    // 上游 BasePipelineServer.WithEffectHints 的四种声明形态：
+    let read_only: PipelineCommand = serde_json::from_value(json!({
+        "name": "console.get", "readOnly": true, "destructive": false, "idempotent": true
+    }))
+    .unwrap();
+    let annotations = effect_annotations(&read_only).unwrap();
+    assert_eq!(annotations["readOnlyHint"], true);
+    assert_eq!(annotations["destructiveHint"], false);
+    assert_eq!(annotations["idempotentHint"], true);
+
+    let destructive: PipelineCommand = serde_json::from_value(json!({
+        "name": "script.eval", "readOnly": false, "destructive": true, "idempotent": false
+    }))
+    .unwrap();
+    let annotations = effect_annotations(&destructive).unwrap();
+    assert_eq!(annotations["readOnlyHint"], false);
+    assert_eq!(annotations["destructiveHint"], true);
+    assert_eq!(annotations["idempotentHint"], false);
+
+    // Unspecified：三个布尔整体缺席 → 无 annotations。
+    let unspecified: PipelineCommand =
+        serde_json::from_value(json!({ "name": "runtime status" })).unwrap();
+    assert!(unspecified.read_only.is_none());
+    assert!(effect_annotations(&unspecified).is_none());
 }

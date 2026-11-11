@@ -19,7 +19,7 @@
 
 | 增强点 | 官方 CLI | 本工具 |
 | :--- | :--- | :--- |
-| 🤖 **MCP 桥（主打）** | ❌ 无 MCP 形态 | Editor 与 Player 的指令目录自动暴露为 MCP 工具——纯转发零硬编码，包 0.6 → 0.9 全兼容，AI 客户端即插即用 |
+| 🤖 **MCP 桥（主打）** | ❌ 无 MCP 形态 | Editor 与 Player 的指令目录自动暴露为 MCP 工具——纯转发零硬编码，包 0.6 → 1.0 全兼容，AI 客户端即插即用 |
 | 📱 **Android Mono 动态执行** | ❌ 上游裁掉 Android 的 Roslyn 路径，`script.eval` 报 "Platform Not Supported" | ✅ 内置补丁打通 |
 | 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁稳定支持 Unity 2022.3 |
 | 🎮 **Player 调试全托管** | ✅ 桌面：`--runtime`/`--runtime-path`；Android 需自行处理 adb 转发、获取调试端口与令牌 | ✅ 官方同款 flag 之外补 `--adb <包名>`：run-as 读描述符（端口+令牌）→ adb forward → 断线/应用重启自愈，**零手工步骤**，`command` 与 MCP 共用 |
@@ -69,7 +69,7 @@ unity_pipeline_cli install
 - 指令目录自动映射为 tools；Editor 域重载后新增的指令会通过 `tools/list_changed` 通知客户端刷新
 - 连接失效（Editor 重启 / 域重载）自动重新发现；Editor 忙碌时按服务端 `Retry-After` 自动重试（至多 30 次）；被模态对话框阻塞时直接报错并转发 Editor 给出的提示
 - 任何返回 PNG 的指令（截图类）自动以 MCP 图片内容返回（base64）；任何自带 `timeout` / `timeout_s`（秒）参数的指令，该超时端到端生效
-- 工具名与命令目录同源（`asset.create` 一类点号全名），跨组唯一；MCP 层零硬编码命令名，包 0.6 → 0.9 全兼容
+- 工具名与命令目录同源（`asset.create` 一类点号全名），跨组唯一；MCP 层零硬编码命令名，包 0.6 → 1.0 全兼容
 - 所有返回文本中的 Bearer Token 一律替换为 `[redacted]`
 - 兼容 MCP 协议版本 `2024-11-05` / `2025-03-26` / `2025-06-18`
 
@@ -135,7 +135,7 @@ Player 端 runtime server 暴露一组 runtime 指令（0.9.1 为 18 条，0.10 
 | 能力 | 桌面 Mono dev 构建 | 桌面 IL2CPP dev 构建 | Android（Mono dev） | Android / iOS（IL2CPP） |
 | :--- | :--- | :--- | :--- | :--- |
 | runtime 服务器与其余指令（`console.get`、`runtime status`、input、capture、`script.methodreload`…） | ✅ | ✅ | ✅ | ✅ |
-| `script.eval` / `script.eval_file`（动态编译执行） | ✅ | ❌ 编译过但 `Assembly.Load` 在 IL2CPP 下不可用 | ✅ 本工具补丁打通（上游裁剪了 Android 的 Roslyn 路径与引用收集，补丁改走 APK 内读 DLL + AssetManager 流式引用；首次调用需 Roslyn 预热，建议 `--timeout 120` 起） | ❌ `Assembly.Load` 不可用（上游对非桌面平台根本不编入 Roslyn 路径，报 "Platform Not Supported"） |
+| `script.eval`（动态编译执行；废弃的 `script.eval_file` 已随包 1.0 移除） | ✅ | ❌ 编译过但 `Assembly.Load` 在 IL2CPP 下不可用 | ✅ 本工具补丁打通（上游裁剪了 Android 的 Roslyn 路径与引用收集，补丁改走 APK 内读 DLL + AssetManager 流式引用；首次调用需 Roslyn 预热，建议 `--timeout 120` 起） | ❌ `Assembly.Load` 不可用（上游对非桌面平台根本不编入 Roslyn 路径，报 "Platform Not Supported"） |
 | `script.methodreload` 热更 | ✅ | ✅（经 IL 解释器执行：受限 C# 子集 + 固定 host 面） | ✅（同左） | ✅（同左） |
 
 调动态逻辑优先走 `script.methodreload`（全后端可用）；`script.eval` 在桌面 Mono 与 Android Mono dev 构建可用（Android 依赖本工具补丁）。

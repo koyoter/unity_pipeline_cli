@@ -79,6 +79,15 @@ pub struct PipelineCommand {
     /// JSON *string* (`JObject.ToString()`), so it arrives as `Value::String`.
     #[serde(default)]
     pub schema: Option<Value>,
+    /// Effect hints (package 1.0+): what running the command does. The catalog serves all three
+    /// booleans only when the command declares an effect; one that declares none has all three
+    /// absent — "not declared" must stay distinguishable from "declared false".
+    #[serde(default, rename = "readOnly")]
+    pub read_only: Option<bool>,
+    #[serde(default)]
+    pub destructive: Option<bool>,
+    #[serde(default)]
+    pub idempotent: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
