@@ -11,6 +11,10 @@ use crate::i18n::t;
 /// (Claude Desktop, Antigravity, etc.), or adapt it to a schema variant that
 /// uses `servers` / `context_servers`.
 ///
+/// `command` is always the absolute path of the running binary — never a bare
+/// name resolved through PATH, which the MCP host may not share (and might
+/// shadow with an older copy).
+///
 /// Two clearly separated sections are printed: the Editor (Unity project)
 /// connection and the Player (built program) connection — each with its own
 /// entry and hints. When `project_path` is provided, the editor entry's args
@@ -27,7 +31,11 @@ pub fn print_mcp_config(
     trace: bool,
 ) -> Result<()> {
     let exe = std::env::current_exe()?;
-    let command = format_exe_for_config(&exe);
+    // Normalize to an absolute path. The MCP host is a separate process whose
+    // PATH may be stale or shadowed by an older copy of this binary; and macOS's
+    // _NSGetExecutablePath is not required to return an absolute path at all.
+    let exe = std::path::absolute(&exe).unwrap_or(exe);
+    let command = exe.to_string_lossy().into_owned();
     let stem = server_name(&exe);
     let trace_env = if trace {
         exe.parent().map(|dir| {
@@ -162,17 +170,6 @@ fn print_section(title: &str, key: &str, entry: &serde_json::Value) {
     println!("{}", crate::json::pretty(&config));
 }
 
-/// Prefer a bare `unity` invocation when the binary is on PATH, otherwise emit
-/// the fully-qualified executable path so agents can spawn it directly.
-fn format_exe_for_config(exe: &PathBuf) -> String {
-    if let Some(stem) = exe.file_stem().and_then(|s| s.to_str()) {
-        if which_on_path(stem).is_some() {
-            return stem.to_owned();
-        }
-    }
-    exe.to_string_lossy().into_owned()
-}
-
 /// Derive the MCP server entry key from the binary stem (falls back to
 /// "unity"), so the printed config matches whatever the exe is called.
 fn server_name(exe: &PathBuf) -> String {
@@ -181,40 +178,4 @@ fn server_name(exe: &PathBuf) -> String {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_owned())
         .unwrap_or_else(|| "unity".to_owned())
-}
-
-fn which_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let bare = dir.join(name);
-        if bare.is_file() {
-            return Some(bare);
-        }
-        for ext in windows_pathext() {
-            let candidate = dir.join(format!("{name}{ext}"));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-/// PATHEXT-derived extension list, populated only on Windows. On Unix the
-/// binary is expected to be found by its bare name, so this returns empty.
-#[cfg(target_os = "windows")]
-fn windows_pathext() -> Vec<String> {
-    let pathext = std::env::var_os("PATHEXT")
-        .map(|v| v.to_string_lossy().to_string())
-        .unwrap_or_else(|| ".EXE;.BAT;.CMD".to_owned());
-    pathext
-        .split(';')
-        .map(|s| s.trim().to_ascii_lowercase())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-#[cfg(not(target_os = "windows"))]
-fn windows_pathext() -> Vec<String> {
-    Vec::new()
 }
