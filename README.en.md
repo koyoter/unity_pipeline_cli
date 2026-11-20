@@ -11,7 +11,8 @@ A single self-contained Rust binary (Windows 10+ / macOS, Intel and Apple Silico
 - 🤖 **AI bridging (MCP, the headline)**: every pipeline command registered inside the Editor is automatically exposed as an MCP tool (with a JSON Schema description of its parameters). Dropped connections are re-established automatically, busy Editors are retried, screenshots come back as images, and Bearer tokens are redacted everywhere.
 - 🛠 **One-shot install**: fetches `com.unity.pipeline` from the UPM registry, verifies SHA1, matches built-in patches against the package version, and installs into a running project — fixing upstream packages that do not work out of the box on environments like Unity 2022.
 - 🎮 **Direct command control**: `command` lists or executes every pipeline command inside the Editor, forwarding names and JSON parameters verbatim, with `--json` machine-readable output for scripts and CI.
-- 🔍 **Instance discovery**: `projects` lists every running Editor and its Pipeline service status (port / version / reachability).
+- 🔍 **Instance discovery**: `projects` lists every running Editor (Unity and the Tuanjie engine) and its Pipeline service status (port / version / reachability).
+- 🧭 **Tuanjie engine compatibility**: the Tuanjie engine is supported — Editor instance discovery and the one-shot install (including automatic rewriting of the `unity` field, bypassing Tuanjie UPM's hard validation of that field) are both adapted.
 
 ## What goes beyond the official CLI
 
@@ -30,7 +31,7 @@ This tool adds capabilities the official CLI does not have (or only documents as
 ### Prerequisites
 
 - Windows 10+ or macOS (installation uses the built-in `curl` / `tar`)
-- The target project is open in a running Unity Editor (every command that talks to the Editor requires a live instance)
+- The target project is open in a running Unity Editor or the Tuanjie engine (every command that talks to the Editor requires a live instance)
 
 ### Getting the binary
 
@@ -52,7 +53,7 @@ Want a manual look first? `unity_pipeline_cli projects`, `unity_pipeline_cli com
 
 ### `install` — install `com.unity.pipeline`
 
-Interactively pick a running Editor and a package version, then it automatically: downloads (system `curl`) → verifies SHA1 → extracts (system `tar`) → applies built-in patches → installs into `<project>/Packages/com.unity.pipeline` → prints an MCP config snippet bound to that project. Switch back to the Editor and wait for the automatic import.
+Interactively pick a running Editor and a package version, then it automatically: downloads (system `curl`) → verifies SHA1 → extracts (system `tar`) → applies built-in patches → installs into `<project>/Packages/com.unity.pipeline` → prints an MCP config snippet bound to that project. Switch back to the Editor and wait for the automatic import. When the target is a Tuanjie-engine project, the `unity` field of `package.json` is automatically rewritten to the Tuanjie engine version (Tuanjie UPM hard-validates that field's format and rejects Unity 6-style values as invalid).
 
 | Flag | Description |
 | :--- | :--- |
@@ -143,7 +144,7 @@ Prefer `script.methodreload` for dynamic logic (works on every backend); `script
 ### Android troubleshooting quick reference
 
 - Rebuild as a development build (with this tool's `build.run`, pass `options: ["Development", "AllowDebugging"]` — otherwise the package is not debuggable)
-- Self-check: after launching the app, `adb logcat -d -s Unity` should show "Runtime server started successfully on port N"; if not, the runtime pipeline never made it in
+- Self-check: after launching the app, `adb logcat -d -s Unity Tuanjie` should show "Runtime server started successfully on port N"; if not, the runtime pipeline never made it in
 
 The two most common build-side pitfalls when testing on a device (symptom → evidence → fix):
 
@@ -175,7 +176,7 @@ The Player is its **own connection**, alongside the Editor entry (`configure mcp
 
 - The tool list comes from that Player's runtime server and is invoked directly as MCP tools — no separate CLI call; when the Player starts AFTER the MCP connection, the catalog watcher thread detects it and pushes `tools/list_changed`, so the host re-lists without manual refresh
 - Degraded mode: the fetched catalog is cached in the build directory (a local temp dir on Android), so after a crash a restarted MCP still lists the tool set while calls report a clear offline error
-- Two local tools always work: `player_status` (reports whether the Player is running, with a hint on how to start it when not) and `player_log_read` (desktop: Player.log from disk; Android: the device's `adb logcat -d -s Unity`)
+- Two local tools always work: `player_status` (reports whether the Player is running, with a hint on how to start it when not) and `player_log_read` (desktop: Player.log from disk; Android: the device's `adb logcat -d -s Unity Tuanjie`)
 
 ## Appendix
 

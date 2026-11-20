@@ -12,6 +12,7 @@
 - 🛠 **一键安装**：从 UPM registry 拉取 `com.unity.pipeline`，SHA1 校验，按包版本自动匹配内置补丁后装入运行中的项目，解决上游包在 Unity 2022 等环境开箱不可用的问题。
 - 🎮 **命令直控**：`command` 列出或执行 Editor 内的全部管线指令，命令名与 JSON 参数原样转发，`--json` 机器可读输出，适合脚本与 CI。
 - 🔍 **实例发现**：`projects` 列出所有运行中的 Editor（Unity 与团结引擎 Tuanjie）及其 Pipeline 服务状态（端口 / 版本 / 可达性）。
+- 🧭 **团结引擎兼容**：支持团结引擎（Tuanjie）——编辑器实例发现与一键安装（含 `unity` 字段自动改写，绕开团结 UPM 的字段格式硬校验）均已适配。
 
 ## 超出官方 CLI 的增强
 
@@ -30,7 +31,7 @@
 ### 前提
 
 - Windows 10+ 或 macOS（安装时会用到系统自带的 `curl` / `tar`）
-- 目标项目已在 Unity Editor 中打开（所有与 Editor 交互的命令都要求实例正在运行）
+- 目标项目已在 Unity Editor 或团结引擎（Tuanjie）中打开（所有与 Editor 交互的命令都要求实例正在运行）
 
 ### 获取
 
