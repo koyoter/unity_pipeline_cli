@@ -24,7 +24,7 @@ This tool adds capabilities the official CLI does not have (or only documents as
 | 📱 **Android Mono dynamic execution** | ❌ upstream compiles the Roslyn path out of Android, `script.eval` reports "Platform Not Supported" | ✅ enabled by a built-in patch |
 | 🧩 **Older Editor compatibility** | ❌ supports only some versions out of the box | ✅ built-in patches stably support Unity 2022.3 |
 | 🎮 **Fully managed Player debugging** | ✅ desktop: `--runtime`/`--runtime-path`; on Android you must handle adb forwarding and fetch the debug port/token yourself | ✅ those same flags plus `--adb <package>`: descriptor via run-as (port + token) → adb forward → self-healing after disconnects/app restarts, **zero manual steps**, shared by `command` and MCP |
-| 🛟 **Debugging resilience** | ❌ connection lost = tools gone | ✅ the MCP connection stays usable after a Player crash (tool-catalog cache + `player_status`/`player_log_read` local tools); `tools/list_changed` is pushed automatically when the Player starts after the connection |
+| 🧯 **Debugging resilience** | ❌ connection lost = tools gone | ✅ the MCP connection stays usable after a Player crash (tool-catalog cache + `player_status`/`player_log_read` local tools); `tools/list_changed` is pushed automatically when the Player starts after the connection |
 
 ## Quick start
 
