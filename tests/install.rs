@@ -178,6 +178,57 @@ fn read_package_version_reads_package_json() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// 团结引擎项目的 ProjectVersion.txt 带 `m_TuanjieEditorVersion` 行：此时
+/// package.json 的 `unity` 字段改写为项目引擎版本的 major.minor（团结 UPM
+/// 对该字段做 <年>.<版本> 硬校验，Unity 6 风格的 `6000.0` 直接判非法）。
+/// 非团结项目一律不动。
+#[test]
+fn adjust_package_for_tuanjie_rewrites_unity_field_only_for_tuanjie() {
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_tuanjie_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    let pkg_dir = tmp.join("package");
+    let project_dir = tmp.join("project");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::create_dir_all(project_dir.join("ProjectSettings")).unwrap();
+
+    // Non-Tuanjie project: untouched even with a Unity 6 style unity field.
+    std::fs::write(
+        project_dir.join("ProjectSettings").join("ProjectVersion.txt"),
+        "m_EditorVersion: 6000.0.23f1\n",
+    )
+    .unwrap();
+    let pkg_json = r#"{"name":"com.unity.pipeline","version":"1.0.1","unity":"6000.0"}"#;
+    std::fs::write(pkg_dir.join("package.json"), pkg_json).unwrap();
+    adjust_package_for_tuanjie(&pkg_dir, &project_dir).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(pkg_dir.join("package.json")).unwrap(),
+        pkg_json
+    );
+
+    // Tuanjie project (2022.3.62t18): rewritten to the editor's major.minor.
+    std::fs::write(
+        project_dir.join("ProjectSettings").join("ProjectVersion.txt"),
+        "m_EditorVersion: 2022.3.62t18\nm_EditorVersionWithRevision: 2022.3.62t18 (89460cc452f5)\nm_TuanjieEditorVersion: 1.11.1\n",
+    )
+    .unwrap();
+    adjust_package_for_tuanjie(&pkg_dir, &project_dir).unwrap();
+    let after = std::fs::read_to_string(pkg_dir.join("package.json")).unwrap();
+    assert!(after.contains(r#""unity": "2022.3""#), "{after}");
+    assert!(!after.contains("6000.0"));
+
+    // Already matching: second run is a no-op (still valid JSON, same value).
+    adjust_package_for_tuanjie(&pkg_dir, &project_dir).unwrap();
+    assert!(std::fs::read_to_string(pkg_dir.join("package.json"))
+        .unwrap()
+        .contains(r#""unity": "2022.3""#));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// End-to-end sanity check: for every pristine package extraction cached
 /// under `releases/downloads/` (or the tarball in `UNITY_TARBALL`), select
 /// the patch set for its version, then parse + dry-run + apply those

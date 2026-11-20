@@ -253,23 +253,32 @@ fn is_worker_process(cmd_line: &str) -> bool {
         || (cmd_line.contains("-name") && cmd_line.contains("AssetImport"))
 }
 
-/// Platform-specific substring used to locate the Unity Editor process.
-/// Windows binaries are named `Unity.exe`; macOS ships `Unity.app/Contents/MacOS/Unity`.
+/// Platform-specific substrings used to locate the Editor process. Unity and the
+/// Tuanjie fork (团结引擎) are enumerated side by side since both may coexist on one
+/// machine, and neither needle is a substring of the other's binary name.
+/// Windows binaries are `Unity.exe` / `Tuanjie.exe`; macOS ships `Unity.app` /
+/// `Tuanjie.app` (the macOS Tuanjie layout follows the fork convention — verify on
+/// a real macOS install during acceptance).
 #[cfg(target_os = "windows")]
-const UNITY_PROCESS_NEEDLE: &str = "Unity.exe";
+const UNITY_PROCESS_NEEDLES: &[&str] = &["Unity.exe", "Tuanjie.exe"];
 #[cfg(target_os = "macos")]
-const UNITY_PROCESS_NEEDLE: &str = "Unity.app/Contents/MacOS/Unity";
+const UNITY_PROCESS_NEEDLES: &[&str] = &[
+    "Unity.app/Contents/MacOS/Unity",
+    "Tuanjie.app/Contents/MacOS/Tuanjie",
+];
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-const UNITY_PROCESS_NEEDLE: &str = "Unity";
+const UNITY_PROCESS_NEEDLES: &[&str] = &["Unity", "Tuanjie"];
 
 /// On macOS, only the main Editor process has argv[0] ending in
-/// `Unity.app/Contents/MacOS/Unity`. Auxiliary helpers live under
+/// `<App>.app/Contents/MacOS/<binary>`. Auxiliary helpers live under
 /// `Contents/Frameworks/`, `Contents/Tools/`, `Contents/Resources/`, etc., so
 /// filtering by argv[0] suffix keeps us from treating them as Editors.
 #[cfg(target_os = "macos")]
 fn is_main_editor_argv0(cmd_line: &str) -> bool {
     let argv0 = cmd_line.split_whitespace().next().unwrap_or("");
-    argv0.ends_with("/Unity.app/Contents/MacOS/Unity")
+    UNITY_PROCESS_NEEDLES
+        .iter()
+        .any(|n| argv0.ends_with(&format!("/{n}")))
 }
 
 /// Read the working directory of `pid` via `lsof`. Unity Hub on macOS launches
@@ -300,7 +309,8 @@ fn read_process_cwd(pid: u32) -> Option<PathBuf> {
     None
 }
 
-/// Return every running Unity Editor instance, along with its project path.
+/// Return every running Unity / Tuanjie (团结引擎) Editor instance, along with its
+/// project path.
 ///
 /// The project path is discovered by two complementary strategies:
 ///   1. Parse `-projectPath` / `-createProject` from the command line
@@ -309,8 +319,17 @@ fn read_process_cwd(pid: u32) -> Option<PathBuf> {
 ///      LaunchServices without command-line args), fall back to the process's
 ///      current working directory, which is always the opened project root.
 pub fn get_running_unity_editors() -> Result<Vec<(PathBuf, u32)>> {
-    let processes: Vec<ProcessInfo> =
-        find_processes_by_name(UNITY_PROCESS_NEEDLE).unwrap_or_default();
+    // One enumeration pass per engine needle; dedupe by pid in case a process
+    // somehow matches both.
+    let mut seen = std::collections::HashSet::new();
+    let mut processes: Vec<ProcessInfo> = Vec::new();
+    for needle in UNITY_PROCESS_NEEDLES {
+        for proc in find_processes_by_name(needle).unwrap_or_default() {
+            if seen.insert(proc.pid) {
+                processes.push(proc);
+            }
+        }
+    }
     let mut editors = Vec::new();
     for proc in processes {
         let cmd_line = proc.cmd.clone();

@@ -116,6 +116,7 @@
   "install.tarball_extracted": "✅ tarball extracted to {0}",
   "install.tarball_path_not_utf8": "The tarball path contains non-UTF-8 characters: {0}",
   "install.target_project": "📌 Target project: {0}",
+  "install.tuanjie_unity_field_adjusted": "🧭 Tuanjie project: rewrote the package.json `unity` field to {0} to pass Tuanjie's <year>.<version> validation",
   "install.using_cache": "📦 Using cache {0}",
   "install.version_not_found": "Version {0} does not exist in the registry",
   "install.version_not_found_with_available": "Version {0} does not exist in the registry; available versions: {1}",

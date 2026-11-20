@@ -116,6 +116,7 @@
   "install.tarball_extracted": "✅ tarball 已解压到 {0}",
   "install.tarball_path_not_utf8": "tarball 路径包含非 UTF-8 字符：{0}",
   "install.target_project": "📌 目标项目：{0}",
+  "install.tuanjie_unity_field_adjusted": "🧭 团结引擎项目：package.json 的 unity 字段已改写为 {0}，以通过团结 UPM 的 <年>.<版本> 格式校验",
   "install.using_cache": "📦 使用缓存 {0}",
   "install.version_not_found": "registry 中不存在版本 {0}",
   "install.version_not_found_with_available": "registry 中不存在版本 {0}，可用版本：{1}",

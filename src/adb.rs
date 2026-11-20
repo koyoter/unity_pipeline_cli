@@ -122,7 +122,12 @@ fn read_descriptor(at: &AdbTarget) -> Result<RuntimeDescriptor> {
     }
     // Last resort: the publisher logs the exact path it wrote (PipelineDescriptorPublisher /
     // LiveDescriptorFile). Extracting it keeps this working wherever persistentDataPath lands.
-    let log = adb(Some(&serial), &["logcat", "-d", "-s", "Unity"]).unwrap_or_default();
+    // Unity and the Tuanjie fork (团结引擎) use different logcat tags; listen to both.
+    let log = adb(
+        Some(&serial),
+        &["logcat", "-d", "-s", "Unity", "Tuanjie"],
+    )
+    .unwrap_or_default();
     let marker = "Descriptor written to ";
     if let Some(line) = log.lines().rev().find(|l| l.contains(marker)) {
         if let Some(path) = line.split(marker).nth(1).map(str::trim) {
@@ -134,7 +139,7 @@ fn read_descriptor(at: &AdbTarget) -> Result<RuntimeDescriptor> {
         }
     }
     Err(anyhow!(
-        "no runtime descriptor found on the device (tried internal files/, external /sdcard/Android/data/{0}/files/, and the publisher's logcat hint).\n\nLikely causes, in order:\n  1. The build is not a Development Build (build with the Development option)\n  2. Project Settings → Pipeline → Runtime → enableInDevelopmentBuilds is off\n  3. The app process crashed before scene load\n\nCheck `adb logcat -d -s Unity` for 'Pipeline:' lines — a healthy app logs \"Runtime server started successfully on port N\" at launch.",
+        "no runtime descriptor found on the device (tried internal files/, external /sdcard/Android/data/{0}/files/, and the publisher's logcat hint).\n\nLikely causes, in order:\n  1. The build is not a Development Build (build with the Development option)\n  2. Project Settings → Pipeline → Runtime → enableInDevelopmentBuilds is off\n  3. The app process crashed before scene load\n\nCheck `adb logcat -d -s Unity Tuanjie` for 'Pipeline:' lines — a healthy app logs \"Runtime server started successfully on port N\" at launch.",
         at.package
     ))
 }
@@ -212,14 +217,15 @@ pub fn resolve_adb_target(serial: Option<&str>, package: &str) -> Result<Target>
     })
 }
 
-/// Tail of the app's Unity logcat buffer (`adb logcat -d -s Unity`), last `lines` lines.
+/// Tail of the app's logcat buffer for Unity/Tuanjie tags (`adb logcat -d -s Unity Tuanjie`),
+/// last `lines` lines.
 pub fn logcat_tail(at: &AdbTarget, lines: usize) -> Result<String> {
     let serial = select_device(at.serial.as_deref())?;
-    let out = adb(Some(&serial), &["logcat", "-d", "-s", "Unity"])?;
+    let out = adb(Some(&serial), &["logcat", "-d", "-s", "Unity", "Tuanjie"])?;
     let total = out.lines().count();
     let tail: Vec<&str> = out.lines().skip(total.saturating_sub(lines)).collect();
     Ok(format!(
-        "adb logcat -d -s Unity — showing {}/{} lines\n{}",
+        "adb logcat -d -s Unity Tuanjie — showing {}/{} lines\n{}",
         tail.len(),
         total,
         tail.join("\n")

@@ -214,6 +214,8 @@ pub fn run(opts: Options) -> Result<()> {
     apply_patches(&file_patches, &package_dir).context(t("install.apply_patches_failed"))?;
     println!("{}", t("install.patches_applied"));
 
+    adjust_package_for_tuanjie(&package_dir, &target_project)?;
+
     // Step 3: copy the patched package into the target project's Packages/ dir.
     let dest_dir = target_project.join("Packages").join(PACKAGE_ID);
     if dest_dir.exists() {
@@ -259,6 +261,70 @@ pub fn run(opts: Options) -> Result<()> {
             tr("install.gen_mcp_config_failed", &[&format!("{err:#}")])
         );
     }
+    Ok(())
+}
+
+/// True when `project_dir` belongs to a Tuanjie engine install. Tuanjie writes an
+/// extra `m_TuanjieEditorVersion` line into ProjectVersion.txt — an authoritative
+/// marker Unity projects never carry. Returns the `m_EditorVersion` value
+/// (e.g. `2022.3.62t18`) so the `unity` field can be derived from it.
+fn read_tuanjie_editor_version(project_dir: &Path) -> Option<String> {
+    let file = project_dir.join("ProjectSettings").join("ProjectVersion.txt");
+    let content = fs::read_to_string(file).ok()?;
+    if !content
+        .lines()
+        .any(|l| l.starts_with("m_TuanjieEditorVersion:"))
+    {
+        return None;
+    }
+    let version = content
+        .lines()
+        .find_map(|l| l.strip_prefix("m_EditorVersion:"))?
+        .trim()
+        .to_owned();
+    (!version.is_empty()).then_some(version)
+}
+
+/// Tuanjie's UPM hard-validates the `unity` field of package.json against
+/// `<year>.<version>` and rejects Unity 6-style values like `6000.0`, failing the
+/// whole package resolution (Unity editors only warn and still load the embedded
+/// package). When the target is a Tuanjie project, rewrite the field to that
+/// editor's major.minor — a value Tuanjie accepts by definition. No-op elsewhere.
+fn adjust_package_for_tuanjie(package_dir: &Path, project_dir: &Path) -> Result<()> {
+    let Some(editor_version) = read_tuanjie_editor_version(project_dir) else {
+        return Ok(());
+    };
+    let target = editor_version
+        .split('.')
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(".");
+    let manifest_path = package_dir.join("package.json");
+    let text = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+    let mut pkg: serde_json::Value = serde_json::from_str(&text)
+        .with_context(|| format!("invalid package.json at {}", manifest_path.display()))?;
+    if pkg.get("unity").and_then(|v| v.as_str()) == Some(target.as_str()) {
+        return Ok(());
+    }
+    // Only touch packages that already declare `unity`; the guard also avoids
+    // panicking on the Value indexer for malformed (non-object) manifests.
+    let Some(obj) = pkg.as_object_mut() else {
+        return Ok(());
+    };
+    if !obj.contains_key("unity") {
+        return Ok(());
+    }
+    obj.insert(
+        "unity".to_owned(),
+        serde_json::Value::String(target.clone()),
+    );
+    fs::write(&manifest_path, serde_json::to_string_pretty(&pkg)?)
+        .with_context(|| format!("failed to write {}", manifest_path.display()))?;
+    println!(
+        "{}",
+        tr("install.tuanjie_unity_field_adjusted", &[&target])
+    );
     Ok(())
 }
 

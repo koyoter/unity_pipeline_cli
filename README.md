@@ -11,7 +11,7 @@
 - 🤖 **AI 桥接（MCP，主打）**：Editor 内注册的每条管线指令自动暴露为 MCP 工具（含 JSON Schema 参数描述）。连接失效自动重连、Editor 忙碌自动重试、截图直接以图片回传、Bearer Token 全程脱敏。
 - 🛠 **一键安装**：从 UPM registry 拉取 `com.unity.pipeline`，SHA1 校验，按包版本自动匹配内置补丁后装入运行中的项目，解决上游包在 Unity 2022 等环境开箱不可用的问题。
 - 🎮 **命令直控**：`command` 列出或执行 Editor 内的全部管线指令，命令名与 JSON 参数原样转发，`--json` 机器可读输出，适合脚本与 CI。
-- 🔍 **实例发现**：`projects` 列出所有运行中的 Editor 及其 Pipeline 服务状态（端口 / 版本 / 可达性）。
+- 🔍 **实例发现**：`projects` 列出所有运行中的 Editor（Unity 与团结引擎 Tuanjie）及其 Pipeline 服务状态（端口 / 版本 / 可达性）。
 
 ## 超出官方 CLI 的增强
 
@@ -52,7 +52,7 @@ unity_pipeline_cli install
 
 ### `install` — 安装 `com.unity.pipeline`
 
-交互式选择运行中的 Editor 与包版本，随后自动完成：下载（系统 `curl`）→ SHA1 校验 → 解压（系统 `tar`）→ 应用内置补丁 → 装入 `<项目>/Packages/com.unity.pipeline` → 打印已绑定该项目的 MCP 配置片段。回到 Editor 等待自动导入即可。
+交互式选择运行中的 Editor 与包版本，随后自动完成：下载（系统 `curl`）→ SHA1 校验 → 解压（系统 `tar`）→ 应用内置补丁 → 装入 `<项目>/Packages/com.unity.pipeline` → 打印已绑定该项目的 MCP 配置片段。回到 Editor 等待自动导入即可。目标为团结引擎项目时，`package.json` 的 `unity` 字段会自动改写为团结引擎版本（团结 UPM 硬校验该字段格式，Unity 6 风格的值会判非法导致包解析失败）。
 
 | 参数 | 说明 |
 | :--- | :--- |
@@ -143,7 +143,7 @@ Player 端 runtime server 暴露一组 runtime 指令（0.9.1 为 18 条，0.10 
 ### Android 排障速查
 
 - 重新打包：开发构建（用本工具 `build.run` 时记得 `options: ["Development", "AllowDebugging"]`，否则包不可调试）
-- 自检：启动应用后 `adb logcat -d -s Unity` 应出现 "Runtime server started successfully on port N"；没出现就是没编进去
+- 自检：启动应用后 `adb logcat -d -s Unity Tuanjie` 应出现 "Runtime server started successfully on port N"；没出现就是没编进去
 
 真机联调最常见的两个构建侧坑（现象 → 判据 → 修复）：
 
@@ -175,7 +175,7 @@ Player 是一条**独立连接**，与 Editor 条目并存（`configure mcp` 可
 
 - 工具表来自该 Player 的 runtime server，直接以 MCP 工具调用，无需另起 CLI；Player 在 MCP 连接**之后**启动时，目录监视线程自动探到并推送 `tools/list_changed`，宿主无需手动刷新
 - 降级可用：成功拉到工具表后缓存在构建目录（Android 在本地临时目录），Player 崩溃后重启 MCP 仍能列出工具集，调用则明确报离线错误
-- 两个本地工具始终可用：`player_status`（查 Player 是否在跑，不在跑时给出启动提示）、`player_log_read`（桌面读 Player.log，Android 读 `adb logcat -d -s Unity`）
+- 两个本地工具始终可用：`player_status`（查 Player 是否在跑，不在跑时给出启动提示）、`player_log_read`（桌面读 Player.log，Android 读 `adb logcat -d -s Unity Tuanjie`）
 
 ## 附录
 
