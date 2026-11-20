@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**让 AI Agent 直接操控正在运行的 Unity Editor。** `unity_pipeline_cli` 把 `com.unity.pipeline` 包在 Editor 内提供的本地 HTTP 服务桥接成 MCP 工具，Claude Desktop 等 AI 客户端即插即用；同时提供命令行手动控制、Editor 实例发现与带补丁的一键安装。
+**让 AI Agent 直接操控正在运行的 Unity Editor 与团结引擎（Tuanjie）。** `unity_pipeline_cli` 把 `com.unity.pipeline` 包在 Editor 内提供的本地 HTTP 服务桥接成 MCP 工具，Claude Desktop 等 AI 客户端即插即用；同时提供命令行手动控制、Editor 实例发现与带补丁的一键安装。
 
 单文件 Rust 二进制（Windows 10+ / macOS，Intel 与 Apple Silicon），零重依赖。官方 [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) 负责安装编辑器、创建项目；控制 Editor 本身所需的 `com.unity.pipeline` 包这一环由本工具完成并增强——内置补丁打通上游包开箱不可用的旧版 Editor，已稳定支持 **Unity 2022.3**（定位全貌见[与官方 Unity CLI 的关系](#与官方-unity-cli-的关系)）。
 

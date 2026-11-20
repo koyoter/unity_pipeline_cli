@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**Let AI agents drive a running Unity Editor directly.** `unity_pipeline_cli` bridges the local HTTP service exposed by the `com.unity.pipeline` package inside the Editor into MCP tools, ready to plug into AI clients such as Claude Desktop. It also provides manual command-line control, Editor instance discovery, and one-shot patched installation.
+**Let AI agents drive a running Unity Editor or the Tuanjie engine directly.** `unity_pipeline_cli` bridges the local HTTP service exposed by the `com.unity.pipeline` package inside the Editor into MCP tools, ready to plug into AI clients such as Claude Desktop. It also provides manual command-line control, Editor instance discovery, and one-shot patched installation.
 
 A single self-contained Rust binary (Windows 10+ / macOS, Intel and Apple Silicon). The official [Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli) installs Editors and creates projects; controlling the Editor itself requires the separate `com.unity.pipeline` package — that slice is what this tool does and enhances, with built-in patches bridging upstream packages that do not work out of the box on older Editors. **Unity 2022.3** is already stably supported (full positioning in [Relation to the official Unity CLI](#relation-to-the-official-unity-cli)).
 
