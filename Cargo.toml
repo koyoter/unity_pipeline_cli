@@ -20,6 +20,9 @@ anyhow = "1"
 patchkit = "0.3"
 sha1 = "0.10"
 semver = "1"
+# perf-assistant 扩展 zip 的解压（安装时从 codely.tuanjie.cn 下载；GNU tar
+# 读不了 zip，外部 unzip 各平台不齐，纯 Rust 实现跨平台确定）
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }

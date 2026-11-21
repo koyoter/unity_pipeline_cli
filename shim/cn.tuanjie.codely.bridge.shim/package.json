@@ -1,0 +1,8 @@
+{
+  "name": "cn.tuanjie.codely.bridge.shim",
+  "version": "0.1.0",
+  "displayName": "Codely Bridge Shim (unity_pipeline_cli)",
+  "description": "编译面垫片：为 cn.tuanjie.*.assistant 系列包提供 UnityTcp.Editor 程序集与 [CustomTool] 属性的最小实现，不含 Codely TCP 桥。工具的发现与执行由 unity_pipeline_cli 对 com.unity.pipeline 的补丁吸收。由 unity_pipeline_cli 安装管理，请勿与真桥 cn.tuanjie.codely.bridge 同时安装。",
+  "unity": "2022.3",
+  "type": "library"
+}

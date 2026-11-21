@@ -115,6 +115,13 @@ enum TopCommand {
         /// Reuse an existing tarball in `downloads/` instead of re-fetching.
         #[arg(long)]
         keep_cache: bool,
+        /// After the pipeline install, also install the perf-assistant packages
+        /// (skips the interactive prompt).
+        #[arg(long, conflicts_with = "no_assistants")]
+        assistants: bool,
+        /// Skip the perf-assistant packages entirely (skips the interactive prompt).
+        #[arg(long)]
+        no_assistants: bool,
         /// Print the MCP config with UNITY_MCP_TRACE pointing at a log file next to the exe.
         #[arg(long)]
         trace: bool,
@@ -230,11 +237,20 @@ fn main() -> ExitCode {
             version,
             latest,
             keep_cache,
+            assistants,
+            no_assistants,
             trace,
         } => match install::run(install::Options {
             version,
             latest,
             keep_cache,
+            assistants: if assistants {
+                Some(true)
+            } else if no_assistants {
+                Some(false)
+            } else {
+                None
+            },
             trace,
         }) {
             Ok(()) => ExitCode::SUCCESS,

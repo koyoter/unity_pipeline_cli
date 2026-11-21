@@ -1,0 +1,279 @@
+diff --git a/Editor/Commands/AssistantToolBridge.cs b/Editor/Commands/AssistantToolBridge.cs
+new file mode 100644
+index 0000000..e50c1de
+--- /dev/null
++++ b/Editor/Commands/AssistantToolBridge.cs
+@@ -0,0 +1,273 @@
++using System;
++using System.Collections.Generic;
++using System.Reflection;
++using Newtonsoft.Json;
++using Newtonsoft.Json.Linq;
++using Unity.Pipeline.Commands;
++using UnityEditor;
++using UnityEngine;
++
++namespace Unity.Pipeline.Editor.Assistants
++{
++    /// <summary>
++    /// 吸收 perf-assistant 生态（cn.tuanjie.*.assistant 包）的编辑器工具进动态命令目录。
++    /// 这些包以 [UnityTcp.Editor.Tools.ExecuteCustomTool.CustomTool("名", "描述")] 标注
++    /// public static object 方法(JObject 参数)，由垫片包 cn.tuanjie.codely.bridge.shim 提供
++    /// 编译面；本类编译期零引用垫片，运行期反射定位属性，垫片缺席时静默跳过（纯 pipeline
++    /// 形态零副作用）。工具增删改由扫描自动吸收，本文件无需随助手包版本更新。
++    ///
++    /// 参数传递：executor 按声明参数名绑定，本桥声明单个 <c>parameters</c> 对象参数，
++    /// 调用方须把工具参数整体包在该对象内：{"parameters": {…}}（目录 schema 与描述后缀
++    /// 均已同步声明）。
++    /// </summary>
++    internal static class AssistantToolBridge
++    {
++        private const string AttributeFullName = "UnityTcp.Editor.Tools.ExecuteCustomTool+CustomToolAttribute";
++        private const string ShimAssemblyName = "UnityTcp.Editor";
++        private const string CodelyNewtonsoftAssemblyName = "Codely.Newtonsoft.Json";
++        private const string CodelyJObjectFullName = "Codely.Newtonsoft.Json.Linq.JObject";
++
++        // 描述后缀：教会调用方 wrapper 形态。附加在原描述后，保持原工具参数说明完整。
++        private const string DescriptionSuffix =
++            "\n[调用方式] 本工具参数须整体包进 parameters 对象：{\"parameters\": {…}}。" +
++            "（perf-assistant 吸收工具；以上为原参数说明）";
++
++        // ponytail: 静态破坏性清单，与 80 工具的快照对齐；名单变化时手工同步（吸收是反射动态的，此表只管门禁）
++        private static readonly HashSet<string> DestructiveTools = new HashSet<string>
++        {
++            "android_build.build_and_install",
++            "android_build.build_apk",
++            "android_build.install_to_device",
++            "android_build.launch_app",
++            "ios_build.build_and_install",
++            "ios_build.export_xcodeproject",
++            "ios_build.compile_app",
++            "ios_build.install_to_device",
++            "ios_build.launch_app",
++            "particle.apply_lod",
++        };
++
++        private static Lazy<MethodInfo> s_CodelyParse;
++        private static Lazy<MethodInfo> s_CodelySerialize;
++
++        [InitializeOnLoadMethod]
++        private static void Install()
++        {
++            s_CodelyParse = new Lazy<MethodInfo>(FindCodelyParse);
++            s_CodelySerialize = new Lazy<MethodInfo>(FindCodelySerialize);
++            try
++            {
++                RegisterDiscoveredTools();
++            }
++            catch (Exception e)
++            {
++                Debug.LogWarning($"[AssistantToolBridge] 助手工具扫描失败（本次启动可能无助手工具）：{e.Message}");
++            }
++        }
++
++        private static void RegisterDiscoveredTools()
++        {
++            var attrType = FindAttributeType();
++            if (attrType == null)
++                return; // 垫片未安装：纯 pipeline 形态，静默跳过
++
++            var nameProperty = attrType.GetProperty("Name");
++            var descriptionProperty = attrType.GetProperty("Description");
++            if (nameProperty == null || descriptionProperty == null)
++            {
++                Debug.LogWarning("[AssistantToolBridge] CustomTool 属性形状与预期不符，跳过吸收。");
++                return;
++            }
++
++            var registered = 0;
++            foreach (var (method, attr) in EnumerateAttributedMethods(attrType))
++            {
++                var rawName = nameProperty.GetValue(attr) as string;
++                if (string.IsNullOrEmpty(rawName))
++                    continue;
++
++                var description = (descriptionProperty.GetValue(attr) as string) ?? "";
++                if (!SplitFullName(rawName, out var group, out var name))
++                {
++                    Debug.LogWarning($"[AssistantToolBridge] 跳过无法分组的工具名 '{rawName}'。");
++                    continue;
++                }
++
++                var effect = DestructiveTools.Contains(rawName)
++                    ? CommandEffect.Destructive
++                    : CommandEffect.Unspecified;
++
++                try
++                {
++                    CommandRegistry.RegisterCommand(
++                        group, name, description + DescriptionSuffix,
++                        MakeHandler(method), true, new[] { "assistant" }, effect);
++                    registered++;
++                }
++                catch (InvalidOperationException)
++                {
++                    // 已注册（本域内重扫）：幂等跳过
++                }
++                catch (ArgumentException e)
++                {
++                    Debug.LogWarning($"[AssistantToolBridge] 注册 '{rawName}' 被拒：{e.Message}");
++                }
++            }
++
++            if (registered > 0)
++                Debug.Log($"[AssistantToolBridge] 已吸收 {registered} 个助手工具进命令目录。");
++        }
++
++        /// <summary>按最后一个 '.' 切 group/name；无 '.' 落 assistant 兜底组。返回 false 表示格式非法。</summary>
++        private static bool SplitFullName(string rawName, out string group, out string name)
++        {
++            group = null;
++            name = null;
++            if (string.IsNullOrWhiteSpace(rawName) || rawName.IndexOf(' ') >= 0)
++                return false;
++
++            var dot = rawName.LastIndexOf('.');
++            if (dot <= 0 || dot == rawName.Length - 1)
++            {
++                if (dot >= 0)
++                    return false; // 前缀或后缀为空
++                group = "assistant"; // 无点名兜底
++                name = rawName;
++                return true;
++            }
++
++            group = rawName.Substring(0, dot);
++            name = rawName.Substring(dot + 1);
++            return name.IndexOf('.') < 0; // name 段不允许再带点（FormatError 规则）
++        }
++
++        private static IEnumerable<(MethodInfo method, Attribute attr)> EnumerateAttributedMethods(Type attrType)
++        {
++            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
++            {
++                Type[] types;
++                try
++                {
++                    types = assembly.GetTypes();
++                }
++                catch (ReflectionTypeLoadException e)
++                {
++                    types = e.Types;
++                }
++                if (types == null)
++                    continue;
++
++                foreach (var type in types)
++                {
++                    // 不滤 IsAbstract：C# 静态类 IsAbstract 恒为 true，工具方法全住静态类里。
++                    if (type == null)
++                        continue;
++
++                    MethodInfo[] methods;
++                    try
++                    {
++                        methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
++                    }
++                    catch
++                    {
++                        continue;
++                    }
++
++                    foreach (var method in methods)
++                    {
++                        Attribute[] attrs;
++                        try
++                        {
++                            attrs = Attribute.GetCustomAttributes(method, attrType, false);
++                        }
++                        catch
++                        {
++                            continue;
++                        }
++                        foreach (var attr in attrs)
++                            yield return (method, attr);
++                    }
++                }
++            }
++        }
++
++        private static Type FindAttributeType()
++        {
++            var type = Type.GetType(AttributeFullName + ", " + ShimAssemblyName);
++            if (type != null)
++                return type;
++
++            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
++            {
++                if (!string.Equals(assembly.GetName().Name, ShimAssemblyName, StringComparison.Ordinal))
++                    continue;
++                return assembly.GetType(AttributeFullName);
++            }
++            return null;
++        }
++
++        private static Func<JObject, object> MakeHandler(MethodInfo tool)
++        {
++            return parameters => InvokeTool(tool, parameters);
++        }
++
++        private static object InvokeTool(MethodInfo tool, JObject parameters)
++        {
++            object codelyArgs = ToCodelyJObject(parameters ?? new JObject());
++            try
++            {
++                var result = tool.Invoke(null, new[] { codelyArgs });
++                return ToPipelineJToken(result);
++            }
++            catch (TargetInvocationException e) when (e.InnerException != null)
++            {
++                // 对齐既有命令异常通道：由 executor 统一转错误响应
++                throw e.InnerException;
++            }
++        }
++
++        private static object ToCodelyJObject(JObject parameters)
++        {
++            var json = parameters.ToString(Formatting.None);
++            return s_CodelyParse.Value.Invoke(null, new object[] { json });
++        }
++
++        private static JToken ToPipelineJToken(object result)
++        {
++            if (result == null)
++                return JValue.CreateNull();
++
++            try
++            {
++                var json = (string)s_CodelySerialize.Value.Invoke(null, new[] { result });
++                return JToken.Parse(json);
++            }
++            catch
++            {
++                // Codely 序列化缺席/失败时退回管线自带序列化；两者皆败再退字符串。
++                try
++                {
++                    return JToken.FromObject(result);
++                }
++                catch
++                {
++                    return new JValue(result?.ToString());
++                }
++            }
++        }
++
++        private static MethodInfo FindCodelyParse()
++        {
++            var assembly = Assembly.Load(CodelyNewtonsoftAssemblyName);
++            var jobjectType = assembly.GetType(CodelyJObjectFullName, throwOnError: true);
++            return jobjectType.GetMethod("Parse", new[] { typeof(string) });
++        }
++
++        private static MethodInfo FindCodelySerialize()
++        {
++            var assembly = Assembly.Load(CodelyNewtonsoftAssemblyName);
++            var convertType = assembly.GetType("Codely.Newtonsoft.Json.JsonConvert", throwOnError: true);
++            return convertType.GetMethod("SerializeObject", new[] { typeof(object) });
++        }
++    }
++}

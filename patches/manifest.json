@@ -108,7 +108,8 @@
       "Editor.Previews.ScenePreview.PreviewBuildCheck.cs@1.patch",
       "Editor.Previews.ScenePreview.PreviewSceneUsage.cs@1.patch",
       "Editor.Previews.ScenePreview.ScenePreviewEngine.cs@1.patch",
-      "Editor.Previews.ScenePreview.ScenePreviewSettings.cs@1.patch"
+      "Editor.Previews.ScenePreview.ScenePreviewSettings.cs@1.patch",
+      "Editor.Commands.AssistantToolBridge.cs@1.patch"
     ]
   }
 }

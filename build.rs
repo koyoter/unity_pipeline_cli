@@ -75,6 +75,54 @@ fn main() {
         "pub static MANIFEST_JSON: &str = include_str!(\"{manifest_include}\");\n"
     ));
 
+    // shim 嵌入：shim/ 下包目录整树 include_bytes（键为 shim/ 相对路径）。
+    // 垫片是我们自己的产物，离线可装、版本锁定；编译期校验包名与 asmdef 名。
+    println!("cargo:rerun-if-changed=shim");
+    let shim_root = PathBuf::from(&manifest_dir).join("shim");
+    let mut shim_files: Vec<PathBuf> = Vec::new();
+    fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        for e in fs::read_dir(dir).expect("shim 目录读取失败").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    walk(&shim_root, &mut shim_files);
+    shim_files.sort();
+    assert!(!shim_files.is_empty(), "shim/ 下没有任何文件：垫片包缺失");
+    let shim_pkg_dir = shim_root.join("cn.tuanjie.codely.bridge.shim");
+    let shim_pkg: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(shim_pkg_dir.join("package.json"))
+            .expect("读取 shim package.json 失败"),
+    )
+    .expect("shim package.json 不是合法 JSON");
+    assert!(
+        shim_pkg["name"] == "cn.tuanjie.codely.bridge.shim",
+        "shim 包名漂移，安装侧按此名复制"
+    );
+    let shim_asmdef_raw =
+        fs::read_to_string(shim_pkg_dir.join("UnityTcp.Editor.asmdef"))
+            .expect("读取 shim asmdef 失败");
+    assert!(
+        shim_asmdef_raw.contains("\"name\": \"UnityTcp.Editor\""),
+        "shim asmdef 名必须逐字为 UnityTcp.Editor（助手包按名解析）"
+    );
+    out.push_str("pub static EMBEDDED_SHIM: &[(&str, &[u8])] = &[\n");
+    for f in &shim_files {
+        let rel = f
+            .strip_prefix(&shim_root)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .replace('\\', "/");
+        let path = f.to_str().unwrap().replace('\\', "/");
+        out.push_str(&format!("    (\"{rel}\", include_bytes!(\"{path}\")),\n"));
+    }
+    out.push_str("];\n");
+
     let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("embedded_patches.rs");
     fs::write(out_path, out).unwrap();
 }

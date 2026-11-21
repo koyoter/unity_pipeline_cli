@@ -586,3 +586,291 @@ fn embedded_patch_applies_to_cached_packages() {
     }
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// 新文件补丁（/dev/null 源）语义：空树创建；重装遇非空遗留产物幂等跳过。
+/// 用真实内嵌的 AssistantToolBridge 新文件补丁做夹具，防止「解析成功但静默
+/// 跳过」或「重装撞 hunk 不匹配」两类回归。
+#[test]
+fn new_file_patch_creates_and_skips_idempotently() {
+    let (name, bytes) = EMBEDDED_PATCHES
+        .iter()
+        .find(|(n, _)| n.contains("AssistantToolBridge"))
+        .expect("AssistantToolBridge 新文件补丁应已内嵌")
+        .to_owned();
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_new_file_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let tree = tmp.join("tree");
+    std::fs::create_dir_all(&tree).unwrap();
+    let patch_path = tmp.join(name);
+    std::fs::write(&patch_path, bytes).unwrap();
+    let patches = load_patch(&format!("system/{name}"), &patch_path).unwrap();
+    assert_eq!(patches.len(), 1);
+    assert!(patches[0].is_new_file, "夹具应是 /dev/null 新文件补丁");
+
+    dry_run_patches(&patches, &tree).expect("空树 dry_run 应通过");
+    apply_patches(&patches, &tree).expect("空树 apply 应创建文件");
+    let target = tree.join("Editor").join("Commands").join("AssistantToolBridge.cs");
+    let first = std::fs::read(&target).expect("新文件应已创建");
+    assert!(String::from_utf8_lossy(&first).contains("AssistantToolBridge"));
+
+    // 重装：非空遗留产物必须幂等跳过，而不是撞 hunk 不匹配
+    dry_run_patches(&patches, &tree).expect("重装 dry_run 应跳过遗留产物");
+    apply_patches(&patches, &tree).expect("重装 apply 应跳过遗留产物");
+    let second = std::fs::read(&target).unwrap();
+    assert_eq!(first, second, "遗留产物不应被改写");
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// 垫片嵌入完整性：asmdef 名逐字校验、DLL 体量、属性类源码在场。
+#[test]
+fn embedded_shim_has_asmdef_dll_and_package_json() {
+    let get = |n: &str| {
+        EMBEDDED_SHIM
+            .iter()
+            .find(|(k, _)| *k == n)
+            .map(|(_, b)| *b)
+    };
+    assert!(get("cn.tuanjie.codely.bridge.shim/package.json").is_some());
+    let asmdef = get("cn.tuanjie.codely.bridge.shim/UnityTcp.Editor.asmdef").unwrap();
+    assert!(
+        String::from_utf8_lossy(asmdef).contains("\"name\": \"UnityTcp.Editor\""),
+        "asmdef 名漂移会让助手包整批编译失败"
+    );
+    let dll = get("cn.tuanjie.codely.bridge.shim/Plugins/Codely.Newtonsoft.Json.dll").unwrap();
+    assert!(dll.len() > 500_000, "Codely Newtonsoft DLL 体量异常");
+    let src = get("cn.tuanjie.codely.bridge.shim/ExecuteCustomTool.cs").unwrap();
+    assert!(String::from_utf8_lossy(src).contains("CustomToolAttribute"));
+    let notifier = get("cn.tuanjie.codely.bridge.shim/AgentInputNotifier.cs").unwrap();
+    assert!(String::from_utf8_lossy(notifier).contains("AgentInputNotifier"));
+}
+
+/// 助手包安装离线链路：合成 zip → extract_zip（含 zip-slip 拒绝）→
+/// copy_dir_recursive（任意深度 Tests/ 跳过）。联网下载与真桥冲突提示由
+/// 编辑器验收人工覆盖。
+#[test]
+fn extract_zip_and_copy_assistant_packages_skips_tests() {
+    use std::io::Write as _;
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_assistants_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let make_zip = |name: &str, entries: &[(&str, &[u8])]| {
+        let path = tmp.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut w = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        for (n, b) in entries {
+            w.start_file(*n, opts).unwrap();
+            w.write_all(b).unwrap();
+        }
+        w.finish().unwrap();
+        path
+    };
+
+    let zip_path = make_zip(
+        "ext.zip",
+        &[
+            (
+                "perf-assistant/Packages/cn.tuanjie.profiler.assistant/package.json",
+                br#"{"name":"cn.tuanjie.profiler.assistant"}"#.as_slice(),
+            ),
+            (
+                "perf-assistant/Packages/cn.tuanjie.profiler.assistant/Editor/Tools/ProfilerTools.cs",
+                b"// tool",
+            ),
+            (
+                "perf-assistant/Packages/cn.tuanjie.profiler.assistant/Editor/Tests/ApiTests.cs",
+                b"using NUnit.Framework;",
+            ),
+            (
+                "perf-assistant/Packages/cn.tuanjie.assets.assistant/package.json",
+                br#"{"name":"cn.tuanjie.assets.assistant"}"#.as_slice(),
+            ),
+        ],
+    );
+
+    let extract_root = tmp.join("ext");
+    std::fs::create_dir_all(&extract_root).unwrap();
+    extract_zip(&zip_path, &extract_root).unwrap();
+    let src_packages = extract_root.join("perf-assistant").join("Packages");
+    assert!(
+        src_packages
+            .join("cn.tuanjie.profiler.assistant")
+            .join("package.json")
+            .exists()
+    );
+
+    let dest = tmp.join("proj").join("Packages");
+    std::fs::create_dir_all(&dest).unwrap();
+    let pkg_dest = dest.join("cn.tuanjie.profiler.assistant");
+    std::fs::create_dir_all(&pkg_dest).unwrap();
+    copy_dir_recursive(
+        &src_packages.join("cn.tuanjie.profiler.assistant"),
+        &pkg_dest,
+    )
+    .unwrap();
+    assert!(pkg_dest.join("Editor").join("Tools").join("ProfilerTools.cs").exists());
+    assert!(
+        !pkg_dest.join("Editor").join("Tests").exists(),
+        "任意深度 Tests/ 应被跳过（NUnit 引用会炸助手包主 asmdef 编译）"
+    );
+
+    // zip-slip：../ 条目必须被拒
+    let slip = make_zip("slip.zip", &[("perf-assistant/../evil.txt", b"x" as &[u8])]);
+    let err = extract_zip(&slip, &tmp.join("slip-out"));
+    assert!(err.is_err(), "../ 条目必须被 zip-slip 防护拒绝");
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// 真实扩展 zip 的解压冒烟（存在才跑）：7 个助手包目录齐全。防真实产物
+/// 的布局/压缩方法偏离合成夹具。
+#[test]
+fn real_assistants_zip_extracts_seven_packages() {
+    let zip_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("downloads")
+        .join("perf-assistant-ext-v0.5.0.zip");
+    if !zip_path.exists() {
+        eprintln!("skip: downloads/perf-assistant-ext-v0.5.0.zip 不存在");
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_real_zip_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    extract_zip(&zip_path, &tmp).unwrap();
+    for id in ASSISTANT_PACKAGE_IDS {
+        assert!(
+            tmp.join("perf-assistant")
+                .join("Packages")
+                .join(id)
+                .join("package.json")
+                .exists(),
+            "zip 里缺助手包 {id}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// 真桥在场检测：目录 / manifest.json dependencies / packages-lock.json
+/// dependencies 三种形态都算——registry 解析的真桥不落 Packages/ 目录。
+#[test]
+fn bridge_present_detects_dir_manifest_and_lock() {
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_bridge_detect_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let pkgs = tmp.join("Packages");
+    std::fs::create_dir_all(&pkgs).unwrap();
+    assert!(!bridge_present(&pkgs), "空项目不应检测到真桥");
+
+    // manifest.json 声明（registry 解析形态）
+    std::fs::write(
+        pkgs.join("manifest.json"),
+        r#"{"dependencies": {"com.unity.pipeline": "1.0.1", "cn.tuanjie.codely.bridge": "1.0.93"}}"#,
+    )
+    .unwrap();
+    assert!(bridge_present(&pkgs), "manifest 声明应检测到");
+    std::fs::remove_file(pkgs.join("manifest.json")).unwrap();
+
+    // packages-lock.json 声明（含助手包 dep 干扰项，顶层键才算）
+    std::fs::write(
+        pkgs.join("packages-lock.json"),
+        r#"{"dependencies": {"cn.tuanjie.profiler.assistant": {"version": "file:cn.tuanjie.profiler.assistant", "dependencies": {"cn.tuanjie.codely.bridge": "1.0.80"}}, "cn.tuanjie.codely.bridge": {"version": "1.0.93"}}}"#,
+    )
+    .unwrap();
+    assert!(bridge_present(&pkgs), "lock 顶层声明应检测到");
+    std::fs::remove_file(pkgs.join("packages-lock.json")).unwrap();
+
+    // 目录形态
+    std::fs::create_dir_all(pkgs.join("cn.tuanjie.codely.bridge")).unwrap();
+    assert!(bridge_present(&pkgs), "目录形态应检测到");
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// 助手包 package.json 的真桥依赖剥离：只删真桥键，其余依赖保留；
+/// 无 dependencies / 坏 JSON 原样不动（真桥不在场时 UPM 会整包忽略助手包）。
+#[test]
+fn strip_bridge_dependency_removes_only_bridge_key() {
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_strip_dep_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let p = tmp.join("package.json");
+    std::fs::write(
+        &p,
+        r#"{"name":"cn.tuanjie.assets.assistant","dependencies":{"cn.tuanjie.codely.bridge":"1.0.80","com.unity.nuget.mono-cecil":"1.10.2"}}"#,
+    )
+    .unwrap();
+    strip_bridge_dependency(&p);
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    let deps = v["dependencies"].as_object().unwrap();
+    assert!(!deps.contains_key("cn.tuanjie.codely.bridge"));
+    assert_eq!(deps.get("com.unity.nuget.mono-cecil").unwrap(), "1.10.2");
+
+    std::fs::write(&p, r#"{"name":"x"}"#).unwrap();
+    strip_bridge_dependency(&p);
+    std::fs::write(&p, "not json").unwrap();
+    strip_bridge_dependency(&p);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// skills 同步语义：同名子目录先删后复制（旧内容被整目录替换）、
+/// 异名子目录不碰、根级文件覆盖。exe 目录定位在调用方，此处测纯复制逻辑。
+#[test]
+fn copy_skills_into_replaces_same_name_only() {
+    let tmp = std::env::temp_dir().join(format!(
+        "unity_pipeline_skills_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let src = tmp.join("skills-src");
+    let dest = tmp.join("skills-out");
+    std::fs::create_dir_all(src.join("skill-a")).unwrap();
+    std::fs::create_dir_all(src.join("skill-b")).unwrap();
+    std::fs::write(src.join("skill-a").join("SKILL.md"), b"new").unwrap();
+    std::fs::write(src.join("skill-b").join("SKILL.md"), b"b").unwrap();
+    std::fs::create_dir_all(dest.join("skill-a")).unwrap();
+    std::fs::write(dest.join("skill-a").join("SKILL.md"), b"old").unwrap();
+    std::fs::write(dest.join("skill-a").join("user-edit.txt"), b"custom").unwrap();
+    std::fs::create_dir_all(dest.join("foreign")).unwrap();
+    std::fs::write(dest.join("foreign").join("keep.txt"), b"keep").unwrap();
+
+    let copied = copy_skills_into(&src, &dest).unwrap();
+    assert_eq!(copied, 2, "只处理 src 顶层条目");
+    assert_eq!(
+        std::fs::read_to_string(dest.join("skill-a").join("SKILL.md")).unwrap(),
+        "new",
+        "同名 skill 应被整目录替换"
+    );
+    assert!(
+        !dest.join("skill-a").join("user-edit.txt").exists(),
+        "替换后的同名 skill 不应残留旧文件"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.join("foreign").join("keep.txt")).unwrap(),
+        "keep",
+        "非同名子目录不应被碰"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.join("skill-b").join("SKILL.md")).unwrap(),
+        "b"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
