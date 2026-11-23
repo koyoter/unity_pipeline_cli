@@ -645,7 +645,12 @@ fn embedded_shim_has_asmdef_dll_and_package_json() {
     let src = get("cn.tuanjie.codely.bridge.shim/ExecuteCustomTool.cs").unwrap();
     assert!(String::from_utf8_lossy(src).contains("CustomToolAttribute"));
     let notifier = get("cn.tuanjie.codely.bridge.shim/AgentInputNotifier.cs").unwrap();
-    assert!(String::from_utf8_lossy(notifier).contains("AgentInputNotifier"));
+    let notifier_src = String::from_utf8_lossy(notifier);
+    assert!(notifier_src.contains("AgentInputNotifier"));
+    // 垫片形态的 Ask Assistant 走「复制到剪贴板 + toast」：两者都得在桩里。
+    assert!(notifier_src.contains("systemCopyBuffer"), "垫片桩必须写系统剪贴板");
+    assert!(notifier_src.contains("ShowNotification"), "垫片桩必须有复制成功 toast");
+    assert!(notifier_src.contains("附件"), "剪贴板内容须含附件路径段");
 }
 
 /// 助手包安装离线链路：合成 zip → extract_zip（含 zip-slip 拒绝）→
