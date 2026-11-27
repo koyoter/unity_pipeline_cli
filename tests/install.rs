@@ -736,16 +736,25 @@ fn extract_zip_and_copy_assistant_packages_skips_tests() {
 }
 
 /// 真实扩展 zip 的解压冒烟（存在才跑）：7 个助手包目录齐全。防真实产物
-/// 的布局/压缩方法偏离合成夹具。
+/// 的布局/压缩方法偏离合成夹具。文件名随版本走（元数据接口动态解析），
+/// 因此扫 downloads/ 下任意 perf-assistant-ext-v*.zip。
 #[test]
 fn real_assistants_zip_extracts_seven_packages() {
-    let zip_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("downloads")
-        .join("perf-assistant-ext-v0.5.0.zip");
-    if !zip_path.exists() {
-        eprintln!("skip: downloads/perf-assistant-ext-v0.5.0.zip 不存在");
-        return;
+    let downloads = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("downloads");
+    let mut zip_path: Option<std::path::PathBuf> = None;
+    if let Ok(entries) = std::fs::read_dir(&downloads) {
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let name = name.to_str().unwrap_or_default();
+            if name.starts_with("perf-assistant-ext-v") && name.ends_with(".zip") {
+                zip_path = Some(e.path());
+            }
+        }
     }
+    let Some(zip_path) = zip_path else {
+        eprintln!("skip: downloads/ 下没有 perf-assistant-ext-v*.zip");
+        return;
+    };
     let tmp = std::env::temp_dir().join(format!(
         "unity_pipeline_real_zip_test_{}",
         std::process::id()
@@ -878,4 +887,32 @@ fn copy_skills_into_replaces_same_name_only() {
     );
 
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// parse_assistants_meta：按 item.attachmentId 取附件（图标附件在前也不选错）、
+/// 相对 url 拼站点根、服务端文件名落盘前做基名清洗。
+#[test]
+fn parse_assistants_meta_resolves_by_attachment_id() {
+    let json = concat!(
+        r#"{"item":{"attachmentId":368},"attachment_map":{"#,
+        r#""283":{"filename":"icon.png","url":"https://cdn.example/icon.png"},"#,
+        r#""368":{"filename":"perf-assistant-ext-v0.8.3.zip","#,
+        r#""url":"/skills/download/abc/perf-assistant-ext-v0.8.3.zip"}}}"#
+    );
+    let (url, name) = parse_assistants_meta(json).unwrap();
+    assert_eq!(
+        url,
+        "https://codely.tuanjie.cn/skills/download/abc/perf-assistant-ext-v0.8.3.zip"
+    );
+    assert_eq!(name, "perf-assistant-ext-v0.8.3.zip");
+
+    // 信任边界：带路径分隔符/非 .zip 的文件名一律拒绝。
+    for evil in [
+        r#"{"item":{"attachmentId":1},"attachment_map":{"1":{"filename":"..\\evil.zip","url":"https://x/e.zip"}}}"#,
+        r#"{"item":{"attachmentId":1},"attachment_map":{"1":{"filename":"sub/evil.zip","url":"https://x/e.zip"}}}"#,
+        r#"{"item":{"attachmentId":1},"attachment_map":{"1":{"filename":"evil.exe","url":"https://x/e.exe"}}}"#,
+    ] {
+        assert!(parse_assistants_meta(evil).is_err(), "应拒绝非法文件名 {evil}");
+    }
+    assert!(parse_assistants_meta("{}").is_err(), "缺字段应报错");
 }

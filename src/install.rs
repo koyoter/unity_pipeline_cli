@@ -13,11 +13,17 @@ use crate::i18n::{t, tr};
 
 const REGISTRY_URL: &str = "https://download.packages.unity.com/com.unity.pipeline/";
 const PACKAGE_ID: &str = "com.unity.pipeline";
-/// perf-assistant 扩展 zip 的发布地址（D5：安装时下载、解压到 downloads/）。
-/// 未来新版本 = 换此常量与 ASSISTANTS_ZIP_NAME；`--assistants-zip` 未做，
+/// perf-assistant 扩展发布元数据 API（D5：安装时拉 JSON 解析出最新 zip 地址、
+/// 下载解压到 downloads/；接口失败硬报错，不回退旧版）。`--assistants-zip` 未做，
 /// 需要装任意本地 zip 时再说。
-const ASSISTANTS_ZIP_URL: &str = "https://codely.tuanjie.cn/skills/download/2cf5a72e-8d30-41e2-a042-0418b7d1ce1b/perf-assistant-ext-v0.5.0.zip";
-const ASSISTANTS_ZIP_NAME: &str = "perf-assistant-ext-v0.5.0.zip";
+const ASSISTANTS_API_URL: &str = "https://codely.tuanjie.cn/api/skills/perf-assistant";
+/// 元数据里附件 url 为相对路径（/skills/download/…）时拼接的站点根。
+const ASSISTANTS_SITE_BASE: &str = "https://codely.tuanjie.cn";
+/// 锁定版助手包 zip：无公开按版本 API（/versions、/history 均需登录 401），
+/// 用已验证可用的快照 URL 兜底——最新版编译报错时用户选它救急。
+/// 验收通过新版后在此换 URL 与 NAME。
+const ASSISTANTS_PINNED_ZIP_URL: &str = "https://codely.tuanjie.cn/skills/download/a6008bac-ca3d-4682-a3c7-174e328982d8/perf-assistant-ext-v0.8.3.zip";
+const ASSISTANTS_PINNED_ZIP_NAME: &str = "perf-assistant-ext-v0.8.3.zip";
 /// 垫片包名（build.rs 编译期校验同名）。asmdef 名 UnityTcp.Editor 才是硬约束。
 const SHIM_PACKAGE_ID: &str = "cn.tuanjie.codely.bridge.shim";
 /// 真桥包名：在项目里存在时垫片与之 asmdef/DLL GUID 重名，Unity 编译必炸。
@@ -50,8 +56,8 @@ pub struct Options {
     pub latest: bool,
     /// Never re-download when the tarball is already in `downloads/`.
     pub keep_cache: bool,
-    /// perf-assistant 助手包装/不装：None=交互提示（Q2），Some(true)=--assistants，
-    /// Some(false)=--no-assistants。
+    /// perf-assistant 助手包装/不装/装哪版：None=交互三选一（最新/锁定/不装），
+    /// Some(true)=--assistants（最新版），Some(false)=--no-assistants。
     pub assistants: Option<bool>,
     /// Print the MCP config with UNITY_MCP_TRACE pointing at a log file next to the exe.
     pub trace: bool,
@@ -861,13 +867,32 @@ fn maybe_install_assistants(
     target_project: &Path,
     downloads_dir: &Path,
 ) -> Result<Option<(usize, PathBuf)>> {
-    let do_install = match opts.assistants {
-        Some(v) => v,
-        None => prompt_yes_no(&tr("install.assistants_prompt", &[])),
+    // 版本选择：--no-assistants 跳过；--assistants=最新版（解析失败硬报错，脚本
+    // 路径无锁定退路）；交互=[1]最新（实时解析）/ [2]锁定（硬编码已验证版）/
+    // 回车跳过。最新版解析失败时提示里标不可用，锁定版照常可选（zip URL 不依
+    // 赖 JSON）。--keep-cache 也得联网拿最新版文件名，只是免掉 zip 下载。
+    let (zip_url, zip_name) = match opts.assistants {
+        Some(true) => parse_assistants_meta(&http_get_text(ASSISTANTS_API_URL)?)?,
+        Some(false) => return Ok(None),
+        None => {
+            let latest = http_get_text(ASSISTANTS_API_URL)
+                .ok()
+                .and_then(|body| parse_assistants_meta(&body).ok());
+            let latest_disp = match &latest {
+                Some((_, name)) => zip_version(name).to_string(),
+                None => t("install.assistants_latest_unavailable").to_string(),
+            };
+            let pinned_ver = zip_version(ASSISTANTS_PINNED_ZIP_NAME);
+            match prompt_choice(&tr("install.assistants_prompt", &[&latest_disp, &pinned_ver]))? {
+                Some(1) if latest.is_some() => latest.unwrap(),
+                Some(2) => (
+                    ASSISTANTS_PINNED_ZIP_URL.to_string(),
+                    ASSISTANTS_PINNED_ZIP_NAME.to_string(),
+                ),
+                _ => return Ok(None),
+            }
+        }
     };
-    if !do_install {
-        return Ok(None);
-    }
 
     let packages_dir = target_project.join("Packages");
     // 真桥在：跳过垫片但照装助手包——助手包直接编译到真桥的 UnityTcp.Editor
@@ -891,18 +916,18 @@ fn maybe_install_assistants(
         }
     }
 
-    let zip_path = downloads_dir.join(ASSISTANTS_ZIP_NAME);
+    let zip_path = downloads_dir.join(&zip_name);
     if zip_path.exists() && opts.keep_cache {
         println!("{}", tr("install.using_cache", &[&zip_path.display()]));
     } else {
         println!(
             "{}",
-            tr("install.downloading", &[&ASSISTANTS_ZIP_URL, &zip_path.display()])
+            tr("install.downloading", &[&zip_url, &zip_path.display()])
         );
-        download(ASSISTANTS_ZIP_URL, &zip_path)?;
+        download(&zip_url, &zip_path)?;
     }
 
-    let extract_root = downloads_dir.join(ASSISTANTS_ZIP_NAME.trim_end_matches(".zip"));
+    let extract_root = downloads_dir.join(zip_name.trim_end_matches(".zip"));
     if extract_root.exists() {
         fs::remove_dir_all(&extract_root).with_context(|| {
             tr("install.clean_extract_dir_failed", &[&extract_root.display()])
@@ -989,16 +1014,64 @@ fn maybe_install_assistants(
     Ok(hint)
 }
 
-/// [y/N] 提示：回车/EOF/异常一律按不装（默认保守）。
-fn prompt_yes_no(prompt: &str) -> bool {
+/// 从发布元数据 JSON 解析最新助手包 zip：`item.attachmentId` → `attachment_map[id]`
+/// 的 url（相对路径拼站点根）与 filename。文件名是服务端数据，落盘前要求整体是
+/// 干净基名（无路径分隔符、.zip 结尾）——信任边界。
+fn parse_assistants_meta(json: &str) -> Result<(String, String)> {
+    let fail = |detail: String| {
+        anyhow!("{}", tr("install.assistants_resolve_failed", &[&detail]))
+    };
+    let root: serde_json::Value = serde_json::from_str(json)
+        .map_err(|e| fail(e.to_string()))?;
+    let att_id = root["item"]["attachmentId"]
+        .as_u64()
+        .ok_or_else(|| fail("missing field: item.attachmentId".into()))?;
+    let att = &root["attachment_map"][att_id.to_string()];
+    let url = att["url"]
+        .as_str()
+        .ok_or_else(|| fail(format!("missing field: attachment_map.{att_id}.url")))?;
+    let filename = att["filename"]
+        .as_str()
+        .ok_or_else(|| fail(format!("missing field: attachment_map.{att_id}.filename")))?;
+    let safe_name = if filename.len() > 4
+        && filename.ends_with(".zip")
+        && !filename.contains('/')
+        && !filename.contains('\\')
+    {
+        filename
+    } else {
+        return Err(fail(format!("invalid filename: {filename}")));
+    };
+    let full_url = if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else {
+        format!("{ASSISTANTS_SITE_BASE}{url}")
+    };
+    Ok((full_url, safe_name.to_string()))
+}
+
+/// 助手包三选一提示：[1] 最新版 / [2] 锁定版 / N。回车/EOF/异常/非法输入一律
+/// 跳过（默认保守）；选 1 但最新版不可用时同样跳过。
+fn prompt_choice(prompt: &str) -> Result<Option<u8>> {
     use std::io::Write as _;
     print!("{prompt}");
     let _ = std::io::stdout().flush();
     let mut line = String::new();
     if std::io::stdin().read_line(&mut line).is_err() {
-        return false;
+        return Ok(None);
     }
-    matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+    Ok(match line.trim() {
+        "1" => Some(1),
+        "2" => Some(2),
+        _ => None,
+    })
+}
+
+/// zip 文件名里的版本段（perf-assistant-ext-v0.8.3.zip → v0.8.3）。
+fn zip_version(zip_name: &str) -> &str {
+    zip_name
+        .trim_start_matches("perf-assistant-ext-")
+        .trim_end_matches(".zip")
 }
 
 /// 把扩展的 skills/ 逐个同步到目标目录（Q：exe 目录下平铺）。同名子目录/文件

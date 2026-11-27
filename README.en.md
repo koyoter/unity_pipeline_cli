@@ -25,7 +25,7 @@ This tool adds capabilities the official CLI does not have (or only documents as
 | 🧩 **Older Editor compatibility** | ❌ supports only some versions out of the box | ✅ built-in patches stably support Unity 2022.3 |
 | 🎮 **Fully managed Player debugging** | ✅ desktop: `--runtime`/`--runtime-path`; on Android you must handle adb forwarding and fetch the debug port/token yourself | ✅ those same flags plus `--adb <package>`: descriptor via run-as (port + token) → adb forward → self-healing after disconnects/app restarts, **zero manual steps**, shared by `command` and MCP |
 | 🧯 **Debugging resilience** | ❌ connection lost = tools gone | ✅ the MCP connection stays usable after a Player crash (tool-catalog cache + `player_status`/`player_log_read` local tools); `tools/list_changed` is pushed automatically when the Player starts after the connection |
-| 📦 **perf-assistant tools** | ❌ none | ✅ optionally install 7 `cn.tuanjie.*.assistant` packages: 80 tools (Android/iOS build & install, on-device collection, asset audit, Profiler/FrameDebugger analysis…) merge into the MCP catalog dynamically, with 15 skill workflows staged next to the exe |
+| 📦 **perf-assistant tools** | ❌ none | ✅ optionally install 7 `cn.tuanjie.*.assistant` packages: 94 tools (Android/iOS build & install, on-device collection, asset audit, Profiler/FrameDebugger analysis…) merge into the MCP catalog dynamically, with 15 skill workflows staged next to the exe |
 
 ## Quick start
 
@@ -56,14 +56,14 @@ Want a manual look first? `unity_pipeline_cli projects`, `unity_pipeline_cli com
 
 Interactively pick a running Editor and a package version, then it automatically: downloads (system `curl`) → verifies SHA1 → extracts (system `tar`) → applies built-in patches → installs into `<project>/Packages/com.unity.pipeline` → prints an MCP config snippet bound to that project. Switch back to the Editor and wait for the automatic import. When the target is a Tuanjie-engine project, the `unity` field of `package.json` is automatically rewritten to the Tuanjie engine version (Tuanjie UPM hard-validates that field's format and rejects Unity 6-style values as invalid).
 
-**Optional: the perf-assistant packages (80 tools + 15 skills)** — after the pipeline patch installs, you are asked whether to also install 7 `cn.tuanjie.*.assistant` packages (~1.9 MB download from codely.tuanjie.cn). Their 80 tools are absorbed into the same MCP catalog by a built-in patch, side by side with the pipeline commands; call arguments go wrapped in a `parameters` object (e.g. `{"parameters": {"serialNumber": "…"}}`), and 10 build/install-class tools (`android_build.*` etc.) get a confirmation gate automatically. When a real bridge `cn.tuanjie.codely.bridge` (registry or local) is already present, the shim is removed and the packages compile directly against the bridge; otherwise an offline shim package is installed. The 15 skill workflows are staged into `<exe-dir>\skills\` (same-name directories replaced first) and a hint points you at copying them into your agent host's skills directory.
+**Optional: the perf-assistant packages (94 tools + 15 skills)** — after the pipeline patch installs, you are asked which version to install: [1] latest (resolved live from codely.tuanjie.cn, ~2.4 MB; if it fails to compile, use the pinned version) / [2] pinned v0.8.3 (verified working, refreshed when a new version passes acceptance) / skip. Their 94 tools are absorbed into the same MCP catalog by a built-in patch, side by side with the pipeline commands; call arguments go wrapped in a `parameters` object (e.g. `{"parameters": {"serialNumber": "…"}}`), and 10 build/install-class tools (`android_build.*` etc.) get a confirmation gate automatically. When a real bridge `cn.tuanjie.codely.bridge` (registry or local) is already present, the shim is removed and the packages compile directly against the bridge; otherwise an offline shim package is installed. The 15 skill workflows are staged into `<exe-dir>\skills\` (same-name directories replaced first) and a hint points you at copying them into your agent host's skills directory.
 
 | Flag | Description |
 | :--- | :--- |
 | `--version <version>` | Skip the version picker and install this exact version |
 | `--latest` | Install the registry's `latest` directly |
 | `--keep-cache` | Reuse the tgz already in `downloads/` instead of re-downloading |
-| `--assistants` | Skip the prompt and install the assistant packages (including skills staging) |
+| `--assistants` | Skip the prompt and install the latest assistant packages (including skills staging) |
 | `--no-assistants` | Skip the prompt and skip the assistant packages |
 
 ### `mcp` — MCP server (launched by the AI client; do not run by hand)
