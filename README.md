@@ -26,7 +26,7 @@
 | 🧩 **旧版 Editor 兼容** | ❌ 开箱仅支持部分版本 | ✅ 内置补丁稳定支持 Unity 2022.3 |
 | 🎮 **Player 调试全托管** | ✅ 桌面：`--runtime`/`--runtime-path`；Android 需自行处理 adb 转发、获取调试端口与令牌 | ✅ 官方同款 flag 之外补 `--adb <包名>`：run-as 读描述符（端口+令牌）→ adb forward → 断线/应用重启自愈，**零手工步骤**，`command` 与 MCP 共用 |
 | 🧯 **调试韧性** | ❌ 连接断即失效 | ✅ Player 崩溃后 MCP 连接仍可用（工具表缓存 + `player_status`/`player_log_read` 本地工具）；Player 晚于连接启动时自动推送 `tools/list_changed` |
-| 📦 **perf-assistant 助手工具** | ❌ 无 | ✅ 选装 7 个 `cn.tuanjie.*.assistant` 包：94 个 Android/iOS 构建装机、真机采集、资源审计、Profiler/FrameDebugger 分析等工具动态并入 MCP 目录，15 个 skills 工作流同步到 exe 侧 |
+| 📦 **[perf-assistant 助手工具](https://codely.tuanjie.cn/marketplace/perf-assistant)** | ❌ 无 | ✅ 选装 7 个 `cn.tuanjie.*.assistant` 包：94 个 Android/iOS 构建装机、真机采集、资源审计、Profiler/FrameDebugger 分析等工具动态并入 MCP 目录，15 个 skills 工作流同步到 exe 侧 |
 
 ## 快速上手
 
@@ -58,7 +58,7 @@ unity_pipeline_cli install
 
 交互式选择运行中的 Editor 与包版本，随后自动完成：下载（系统 `curl`）→ SHA1 校验 → 解压（系统 `tar`）→ 应用内置补丁 → 装入 `<项目>/Packages/com.unity.pipeline` → 打印已绑定该项目的 MCP 配置片段。回到 Editor 等待自动导入即可。目标为团结引擎项目时，`package.json` 的 `unity` 字段会自动改写为团结引擎版本（团结 UPM 硬校验该字段格式，Unity 6 风格的值会判非法导致包解析失败）。
 
-**可选：perf-assistant 助手包（94 工具 + 15 skills）**——管线补丁装完会询问装哪个版本：[1] 最新版（codely.tuanjie.cn 实时解析，约 2.4MB；编译报错可改用锁定版）/ [2] 锁定版 v0.8.3（已验证可用，随新版验收更新）/ 不装。其 94 个工具由内置补丁动态吸收进同一 MCP 目录，与管线指令并列直接可调；调用参数整体包进 `parameters` 对象（如 `{"parameters": {"serialNumber": "…"}}`），`android_build.*` 等 10 个构建装机类工具自动挂确认门。项目里已装真桥 `cn.tuanjie.codely.bridge`（registry 或本地）时自动移除垫片、助手包直接编译到真桥，否则装入离线垫片包。15 个 skills 工作流同步到 `<exe目录>\skills\`（同名先删后复制），并提示复制到 agent 宿主的 skills 目录。
+**可选：[perf-assistant 助手包](https://codely.tuanjie.cn/marketplace/perf-assistant)（94 工具 + 15 skills）**——管线补丁装完会询问装哪个版本：[1] 最新版（codely.tuanjie.cn 实时解析，约 2.4MB；编译报错可改用锁定版）/ [2] 锁定版 v0.8.3（已验证可用，随新版验收更新）/ 不装。其 94 个工具由内置补丁动态吸收进同一 MCP 目录，与管线指令并列直接可调；调用参数整体包进 `parameters` 对象（如 `{"parameters": {"serialNumber": "…"}}`），`android_build.*` 等 10 个构建装机类工具自动挂确认门。项目里已装真桥 `cn.tuanjie.codely.bridge`（registry 或本地）时自动移除垫片、助手包直接编译到真桥，否则装入离线垫片包。15 个 skills 工作流同步到 `<exe目录>\skills\`（同名先删后复制），并提示复制到 agent 宿主的 skills 目录。
 
 | 参数 | 说明 |
 | :--- | :--- |
