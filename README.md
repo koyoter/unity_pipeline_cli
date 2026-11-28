@@ -105,8 +105,8 @@ unity_pipeline_cli command "asset find" '{"type":"Material"}'  # 带参执行（
 ```bash
 unity_pipeline_cli configure mcp                            # 一次打印全部三节（见下）
 unity_pipeline_cli configure mcp --project-path "D:\proj"   # 只打编辑器节（绑定项目）
-unity_pipeline_cli configure mcp --runtime-path "C:\Builds\MyGame"   # 只打桌面 Player 节
-unity_pipeline_cli configure mcp --adb com.acme.mygame      # 只打 Android Player 节
+unity_pipeline_cli configure mcp --runtime-path "C:\Builds\YourGame"   # 只打桌面 Player 节
+unity_pipeline_cli configure mcp --adb com.example.yourgame      # 只打 Android Player 节
 ```
 
 不带 flag 一次打印三节——**编辑器 / 桌面 Player / Android Player**——每节都是可直接粘贴的独立 `mcpServers` 条目（`--trace` 给条目附上 `UNITY_MCP_TRACE` 协议日志）。三节的具体形态与差异见[调试打包后的程序](#debugging-a-built-program-player)。
@@ -173,11 +173,11 @@ Player 是一条**独立连接**，与 Editor 条目并存（`configure mcp` 可
   "mcpServers": {
     "unity_pipeline_cli-player": {
       "command": "C:\\path\\to\\unity_pipeline_cli.exe",
-      "args": ["mcp", "--runtime-path", "C:\\Builds\\MyGame"]
+      "args": ["mcp", "--runtime-path", "C:\\Builds\\YourGame"]
     },
     "unity_pipeline_cli-android": {
       "command": "C:\\path\\to\\unity_pipeline_cli.exe",
-      "args": ["mcp", "--adb", "com.acme.mygame"]
+      "args": ["mcp", "--adb", "com.example.yourgame"]
     }
   }
 }

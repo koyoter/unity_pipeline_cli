@@ -13,6 +13,7 @@
   "command.server_version": "🌐 Server version v{0} · port {1}",
   "command.success": "✅ Success",
   "command.usage": "\n💡 Usage: unity command <name> [params JSON]",
+  "configure.hint_android_detected": "  • Android package name auto-read from the project's ProjectSettings.asset.",
   "configure.hint_multi_project_ambiguous": "  • With multiple projects open at the same time, MCP fails to start due to ambiguity.",
   "configure.hint_not_pinned": "Hint: the config above is not bound to a specific project.",
   "configure.hint_other_projects_1": "  To connect other projects to MCP as well, run `unity install` again, or copy this entry manually,",

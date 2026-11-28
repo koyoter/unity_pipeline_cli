@@ -103,8 +103,8 @@ The command name is forwarded verbatim and resolved by the server: grouped namin
 ```bash
 unity_pipeline_cli configure mcp                            # print all three sections at once (see below)
 unity_pipeline_cli configure mcp --project-path "D:\proj"   # Editor section only (pinned)
-unity_pipeline_cli configure mcp --runtime-path "C:\Builds\MyGame"   # desktop Player section only
-unity_pipeline_cli configure mcp --adb com.acme.mygame      # Android Player section only
+unity_pipeline_cli configure mcp --runtime-path "C:\Builds\YourGame"   # desktop Player section only
+unity_pipeline_cli configure mcp --adb com.example.yourgame      # Android Player section only
 ```
 
 Bare `configure mcp` prints all three sections at once — **Editor / desktop Player / Android Player** — each a standalone paste-ready `mcpServers` entry (`--trace` attaches a `UNITY_MCP_TRACE` protocol log to the entries). See [Debugging a built program](#debugging-a-built-program-player) for what each form does.
@@ -169,11 +169,11 @@ The Player is its **own connection**, alongside the Editor entry (`configure mcp
   "mcpServers": {
     "unity_pipeline_cli-player": {
       "command": "C:\\path\\to\\unity_pipeline_cli.exe",
-      "args": ["mcp", "--runtime-path", "C:\\Builds\\MyGame"]
+      "args": ["mcp", "--runtime-path", "C:\\Builds\\YourGame"]
     },
     "unity_pipeline_cli-android": {
       "command": "C:\\path\\to\\unity_pipeline_cli.exe",
-      "args": ["mcp", "--adb", "com.acme.mygame"]
+      "args": ["mcp", "--adb", "com.example.yourgame"]
     }
   }
 }

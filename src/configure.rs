@@ -19,7 +19,10 @@ use crate::i18n::t;
 /// connection and the Player (built program) connection — each with its own
 /// entry and hints. When `project_path` is provided, the editor entry's args
 /// pin the server to that specific project, so multiple Editors can coexist
-/// without ambiguity. When `runtime_path` is provided, ONLY the Player section
+/// without ambiguity, and the Android entry's package name is auto-read from
+/// the project's `ProjectSettings.asset` (`applicationIdentifier` → `Android`),
+/// falling back to the placeholder when the key is absent. When `runtime_path`
+/// is provided, ONLY the Player section
 /// is printed, with that path baked in. When `trace` is set, every entry
 /// carries `UNITY_MCP_TRACE` pointing at a log file next to the binary,
 /// turning on the server's full protocol trace (see `mcp.rs`).
@@ -122,11 +125,19 @@ pub fn print_mcp_config(
 
     // Android Player section: its own entry — package name (and optionally a serial) to adapt.
     eprintln!();
-    let entry = mcp_entry(&command, &["mcp", "--adb", "com.example.yourgame"], trace_env.as_ref());
+    // With a known project (install flow), auto-fill the package name from
+    // ProjectSettings.asset; a project that never switched to the Android build
+    // target has no such key and keeps the placeholder.
+    let detected = project_path.and_then(detect_android_package);
+    let package = detected.as_deref().unwrap_or("com.example.yourgame");
+    let entry = mcp_entry(&command, &["mcp", "--adb", package], trace_env.as_ref());
     print_section(&t("configure.section_android"), &format!("{stem}-android"), &entry);
     eprintln!("{}", t("configure.hint_player_entry"));
     eprintln!("{}", t("configure.hint_player_degrade"));
     eprintln!("{}", t("configure.hint_player_android"));
+    if detected.is_some() {
+        eprintln!("{}", t("configure.hint_android_detected"));
+    }
     Ok(())
 }
 
@@ -147,6 +158,54 @@ fn runtime_path_placeholder() -> &'static str {
     } else {
         "C:\\Builds\\YourGame"
     }
+}
+
+/// Best-effort Android application id from `<project>/ProjectSettings/ProjectSettings.asset`.
+/// The `applicationIdentifier` block carries `Android:` since Unity 2019; a
+/// project that never switched to the Android build target has no such key.
+fn detect_android_package(project_dir: &Path) -> Option<String> {
+    let text =
+        std::fs::read_to_string(project_dir.join("ProjectSettings").join("ProjectSettings.asset"))
+            .ok()?;
+    android_package_from_asset(&text)
+}
+
+/// Plain line scan of Unity's generated YAML. All fields sit two spaces under
+/// the `PlayerSettings:` root; `applicationIdentifier:`'s children (Standalone,
+/// Android, …) sit one level deeper. Indent tracking ends the block, so a later
+/// `buildNumber:`'s own `Android:` build number never gets mistaken for a
+/// package id.
+fn android_package_from_asset(text: &str) -> Option<String> {
+    let mut block_indent = 0usize;
+    let mut in_block = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let indent = line.len() - trimmed.len();
+        if !in_block {
+            if trimmed.starts_with("applicationIdentifier:") {
+                in_block = true;
+                block_indent = indent;
+            }
+            continue;
+        }
+        if indent <= block_indent {
+            // Back at applicationIdentifier's level (or shallower): block over.
+            in_block = false;
+            continue;
+        }
+        if let Some(value) = trimmed.strip_prefix("Android:") {
+            let value = value.trim().trim_matches('"');
+            return if value.is_empty() {
+                None
+            } else {
+                Some(value.to_owned())
+            };
+        }
+    }
+    None
 }
 
 fn mcp_entry(command: &str, args: &[&str], env: Option<&serde_json::Value>) -> serde_json::Value {
@@ -179,3 +238,7 @@ fn server_name(exe: &PathBuf) -> String {
         .map(|s| s.to_owned())
         .unwrap_or_else(|| "unity".to_owned())
 }
+
+#[cfg(test)]
+#[path = "../tests/configure.rs"]
+mod tests;

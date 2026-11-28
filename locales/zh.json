@@ -13,6 +13,7 @@
   "command.server_version": "🌐 服务版本 v{0} · 端口 {1}",
   "command.success": "✅ 成功",
   "command.usage": "\n💡 用法：unity command <命令名> [参数JSON]",
+  "configure.hint_android_detected": "  • Android 包名已自动读取自项目的 ProjectSettings.asset。",
   "configure.hint_multi_project_ambiguous": "  • 同时开多个项目时，MCP 会因歧义而启动失败。",
   "configure.hint_not_pinned": "提示：以上配置未绑定具体项目。",
   "configure.hint_other_projects_1": "  若需为其他项目也接入 MCP，请再运行一次 `unity install` 或手动复制该条目、",
