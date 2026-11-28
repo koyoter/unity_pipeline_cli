@@ -54,7 +54,7 @@ Want a manual look first? `unity_pipeline_cli projects`, `unity_pipeline_cli com
 
 ### `install` — install `com.unity.pipeline`
 
-Interactively pick a running Editor and a package version, then it automatically: downloads (system `curl`) → verifies SHA1 → extracts (system `tar`) → applies built-in patches → installs into `<project>/Packages/com.unity.pipeline` → prints an MCP config snippet bound to that project. Switch back to the Editor and wait for the automatic import. When the target is a Tuanjie-engine project, the `unity` field of `package.json` is automatically rewritten to the Tuanjie engine version (Tuanjie UPM hard-validates that field's format and rejects Unity 6-style values as invalid).
+Interactively pick a running Editor and a package version, then it automatically: downloads (system `curl`) → verifies SHA1 → extracts (system `tar`) → applies built-in patches → installs into `<project>/Packages/com.unity.pipeline` → prints an MCP config snippet bound to that project. Switch back to the Editor and wait for the automatic import. The version list shows only the newest 4 by default and always ends with a pinned entry v1.0.1 (verified working, refreshed after new-version acceptance) — the rescue option when a new registry version has not been audited yet and its patches fail to apply; `--all-versions` expands the full list of supported versions. When the target is a Tuanjie-engine project, the `unity` field of `package.json` is automatically rewritten to the Tuanjie engine version (Tuanjie UPM hard-validates that field's format and rejects Unity 6-style values as invalid).
 
 **Optional: [the perf-assistant packages](https://codely.tuanjie.cn/marketplace/perf-assistant) (94 tools + 15 skills)** — after the pipeline patch installs, you are asked which version to install: [1] latest (resolved live from codely.tuanjie.cn, ~2.4 MB; if it fails to compile, use the pinned version) / [2] pinned v0.8.3 (verified working, refreshed when a new version passes acceptance) / skip. Their 94 tools are absorbed into the same MCP catalog by a built-in patch, side by side with the pipeline commands; call arguments go wrapped in a `parameters` object (e.g. `{"parameters": {"serialNumber": "…"}}`), and 10 build/install-class tools (`android_build.*` etc.) get a confirmation gate automatically. When a real bridge `cn.tuanjie.codely.bridge` (registry or local) is already present, the shim is removed and the packages compile directly against the bridge; otherwise an offline shim package is installed. The 15 skill workflows are staged into `<exe-dir>\skills\` (same-name directories replaced first) and a hint points you at copying them into your agent host's skills directory.
 
@@ -62,6 +62,7 @@ Interactively pick a running Editor and a package version, then it automatically
 | :--- | :--- |
 | `--version <version>` | Skip the version picker and install this exact version |
 | `--latest` | Install the registry's `latest` directly |
+| `--all-versions` | List every supported version in the picker (default: newest 4 + pinned) |
 | `--keep-cache` | Reuse the tgz already in `downloads/` instead of re-downloading |
 | `--assistants` | Skip the prompt and install the latest assistant packages (including skills staging) |
 | `--no-assistants` | Skip the prompt and skip the assistant packages |

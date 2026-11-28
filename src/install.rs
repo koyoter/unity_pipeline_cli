@@ -13,6 +13,13 @@ use crate::i18n::{t, tr};
 
 const REGISTRY_URL: &str = "https://download.packages.unity.com/com.unity.pipeline/";
 const PACKAGE_ID: &str = "com.unity.pipeline";
+/// 锁定版管线包：registry 本就有全量版本列表，这里只是给它挂固定的救急槽位
+/// （交互版本列表末尾）——registry 出了未审计的新版、补丁应用报错时选它救急。
+/// 审计通过新版后在此 bump（同助手包 ASSISTANTS_PINNED_ZIP_* 纪律）。
+const PINNED_PACKAGE_VERSION: &str = "1.0.1";
+/// 交互版本列表默认只展示的最新条数（新→旧取前 N）；`--all-versions` 展开
+/// 全部受支持版本。
+const PICK_VERSION_DEFAULT_SHOWN: usize = 4;
 /// perf-assistant 扩展发布元数据 API（D5：安装时拉 JSON 解析出最新 zip 地址、
 /// 下载解压到 downloads/；接口失败硬报错，不回退旧版）。`--assistants-zip` 未做，
 /// 需要装任意本地 zip 时再说。
@@ -54,6 +61,8 @@ pub struct Options {
     pub version: Option<String>,
     /// Skip the picker and use the registry's `dist-tags.latest`.
     pub latest: bool,
+    /// Show every supported version in the interactive picker, not just the newest few.
+    pub all_versions: bool,
     /// Never re-download when the tarball is already in `downloads/`.
     pub keep_cache: bool,
     /// perf-assistant 助手包装/不装/装哪版：None=交互三选一（最新/锁定/不装），
@@ -1164,15 +1173,34 @@ fn pick_version(
         return Ok(pick);
     }
 
-    // Interactive picker.
+    // Interactive picker. 默认只展示最新 N 条——截断仅影响显示，--version
+    // 校验、--latest、直输版本串都走全量列表。
+    let shown: Vec<String> = if opts.all_versions || versions.len() <= PICK_VERSION_DEFAULT_SHOWN
+    {
+        versions.to_vec()
+    } else {
+        versions[..PICK_VERSION_DEFAULT_SHOWN].to_vec()
+    };
     println!(
         "{}",
         tr("install.pick_version_header", &[&versions.len()])
     );
-    let width = versions.len().to_string().len();
-    for (idx, v) in versions.iter().enumerate() {
+    let width = shown.len().to_string().len();
+    for (idx, v) in shown.iter().enumerate() {
         let marker = if Some(v.as_str()) == latest { "  ← latest" } else { "" };
         println!("  {:>width$}. {v}{marker}", idx + 1, width = width);
+    }
+    // 锁定版固定挂列表末尾：即使与列表条目重复（latest==锁定版时）也单列，
+    // 位置固定才好找。
+    println!(
+        "  {:>width$}. {} ← {}",
+        shown.len() + 1,
+        PINNED_PACKAGE_VERSION,
+        t("install.pick_version_pinned"),
+        width = width
+    );
+    if shown.len() < versions.len() {
+        println!("{}", tr("install.pick_version_show_all", &[&versions.len()]));
     }
     let default_pick = latest.and_then(|l| versions.iter().position(|v| v == l)).unwrap_or(0);
     let default_version = &versions[default_pick];
@@ -1181,7 +1209,7 @@ fn pick_version(
         "{}",
         tr(
             "install.pick_version_prompt",
-            &[&versions.len(), &default_version]
+            &[&(shown.len() + 1), &default_version]
         )
     );
     std::io::stdout().flush().ok();
@@ -1192,17 +1220,27 @@ fn pick_version(
         .lock()
         .read_line(&mut line)
         .context(t("install.read_input_failed"))?;
-    let trimmed = line.trim();
+    resolve_pick(&line, &shown, versions, default_version)
+}
+
+/// 交互输入 → 要装的版本：空串回默认（latest）、数字 1..=len 对应展示列表、
+/// len+1 为锁定版、版本串直接命中（校验走全量列表——默认视图截断不应制造
+/// 新的报错路径；锁定版即使不在过滤列表里也认）。
+fn resolve_pick(input: &str, shown: &[String], all: &[String], default: &str) -> Result<String> {
+    let trimmed = input.trim();
     if trimmed.is_empty() {
-        return Ok(default_version.clone());
+        return Ok(default.to_owned());
     }
     if let Ok(n) = trimmed.parse::<usize>() {
-        if n >= 1 && n <= versions.len() {
-            return Ok(versions[n - 1].clone());
+        if n >= 1 && n <= shown.len() {
+            return Ok(shown[n - 1].clone());
+        }
+        if n == shown.len() + 1 {
+            return Ok(PINNED_PACKAGE_VERSION.to_owned());
         }
     }
     // Accept a version string directly.
-    if versions.iter().any(|v| v == trimmed) {
+    if all.iter().any(|v| v == trimmed) || trimmed == PINNED_PACKAGE_VERSION {
         return Ok(trimmed.to_owned());
     }
     Err(anyhow!("{}", tr("install.invalid_choice", &[&trimmed])))

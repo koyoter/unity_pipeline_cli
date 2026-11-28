@@ -108,6 +108,8 @@
   "install.pick_project_prompt": "请选择目标项目 [1-{0}, 回车默认 1，0 跳过]：",
   "install.pick_version_header": "\n📋 可用版本（{0}）：\n",
   "install.pick_version_prompt": "请选择要安装的版本 [1-{0}, 回车默认 {1}]：",
+  "install.pick_version_pinned": "锁定版",
+  "install.pick_version_show_all": "（共 {0} 个受支持版本，--all-versions 查看全部）",
   "install.read_custom_dir_failed": "读取 custom patch 目录失败：{0}",
   "install.read_input_failed": "读取用户输入失败",
   "install.read_package_json_failed": "读取 {0} 失败（无法确定包版本，补丁集选择中止）",

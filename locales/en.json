@@ -108,6 +108,8 @@
   "install.pick_project_prompt": "Select the target project [1-{0}, Enter for default 1, 0 to skip]: ",
   "install.pick_version_header": "\n📋 Available versions ({0}):\n",
   "install.pick_version_prompt": "Select the version to install [1-{0}, Enter for default {1}]: ",
+  "install.pick_version_pinned": "pinned",
+  "install.pick_version_show_all": "({0} supported versions in total — use --all-versions to list them all)",
   "install.read_custom_dir_failed": "Failed to read the custom patch directory: {0}",
   "install.read_input_failed": "Failed to read user input",
   "install.read_package_json_failed": "Failed to read {0} (cannot determine the package version; patch-set selection aborted)",

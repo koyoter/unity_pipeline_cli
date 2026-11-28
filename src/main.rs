@@ -112,6 +112,9 @@ enum TopCommand {
         /// Skip the picker; install the registry's `dist-tags.latest`.
         #[arg(long)]
         latest: bool,
+        /// Show every supported version in the picker instead of the newest few.
+        #[arg(long)]
+        all_versions: bool,
         /// Reuse an existing tarball in `downloads/` instead of re-fetching.
         #[arg(long)]
         keep_cache: bool,
@@ -236,6 +239,7 @@ fn main() -> ExitCode {
         TopCommand::Install {
             version,
             latest,
+            all_versions,
             keep_cache,
             assistants,
             no_assistants,
@@ -243,6 +247,7 @@ fn main() -> ExitCode {
         } => match install::run(install::Options {
             version,
             latest,
+            all_versions,
             keep_cache,
             assistants: if assistants {
                 Some(true)

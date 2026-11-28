@@ -916,3 +916,59 @@ fn parse_assistants_meta_resolves_by_attachment_id() {
     }
     assert!(parse_assistants_meta("{}").is_err(), "缺字段应报错");
 }
+
+/// 锁定版槽位 = 列表长度 + 1：即使锁定版（1.0.1）同时也在过滤列表里。
+#[test]
+fn resolve_pick_last_slot_returns_pinned_version() {
+    let versions: Vec<String> = ["1.0.1", "1.0.0", "0.9.1-exp.1"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(
+        resolve_pick("4", &versions, &versions, "1.0.1").unwrap(),
+        PINNED_PACKAGE_VERSION
+    );
+}
+
+/// 未来锁定版不在过滤列表里时：输版本串或选末位号仍能装它；空串回默认、
+/// 列表数字照常映射。
+#[test]
+fn resolve_pick_accepts_pinned_name_off_list_and_empty_defaults() {
+    let versions: Vec<String> = ["1.2.0", "1.1.0"].iter().map(|s| s.to_string()).collect();
+    assert_eq!(
+        resolve_pick("1.0.1", &versions, &versions, "1.2.0").unwrap(),
+        PINNED_PACKAGE_VERSION
+    );
+    assert_eq!(
+        resolve_pick("3", &versions, &versions, "1.2.0").unwrap(),
+        PINNED_PACKAGE_VERSION
+    );
+    assert_eq!(resolve_pick("  ", &versions, &versions, "1.2.0").unwrap(), "1.2.0");
+    assert_eq!(resolve_pick("1", &versions, &versions, "1.2.0").unwrap(), "1.2.0");
+}
+
+/// 越界数字与未知串仍报 invalid_choice。
+#[test]
+fn resolve_pick_rejects_out_of_range_and_unknown() {
+    let versions: Vec<String> = ["1.0.1"].iter().map(|s| s.to_string()).collect();
+    assert!(resolve_pick("9", &versions, &versions, "1.0.1").is_err());
+    assert!(resolve_pick("9.9.9", &versions, &versions, "1.0.1").is_err());
+}
+
+/// 默认视图截断后：数字映射展示列表（len+1 仍为锁定槽），未展示的旧版本串
+/// 经全量列表仍可直输。
+#[test]
+fn resolve_pick_numbers_map_to_shown_strings_to_all() {
+    let all: Vec<String> = ["1.2.0", "1.1.0", "1.0.5", "1.0.4", "1.0.3"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let shown = &all[..4];
+    assert_eq!(resolve_pick("4", shown, &all, "1.2.0").unwrap(), "1.0.4");
+    assert_eq!(
+        resolve_pick("5", shown, &all, "1.2.0").unwrap(),
+        PINNED_PACKAGE_VERSION
+    );
+    assert_eq!(resolve_pick("1.0.3", shown, &all, "1.2.0").unwrap(), "1.0.3");
+    assert!(resolve_pick("9", shown, &all, "1.2.0").is_err());
+}
